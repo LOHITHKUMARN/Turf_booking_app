@@ -1,0 +1,53 @@
+# Node / Backend
+backend/node_modules/
+node_modules/
+backend/.env
+.env
+backend/logs/
+backend/.logs.txt
+backend/uploads/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Secrets & Credentials
+backend/src/config/serviceAccountKey.json
+*serviceAccountKey.json
+*.pem
+*.key
+
+# Flutter / Dart
+**/.dart_tool/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+
+# Android / iOS
+**/android/.gradle/
+**/android/local.properties
+**/android/app/release/
+**/ios/.symlinks/
+**/ios/Pods/
+**/ios/Podfile.lock
+**/ios/.symlinks/
+
+# JVM / Crash logs
+hs_err_pid*.log
+replay_pid*.log
+java_error_in_*.log
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.fleet/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
