@@ -2,7 +2,7 @@ class ApiConstants {
   // Configurable at build time via --dart-define=API_SERVER_URL=https://your-domain.com
   static const String serverUrl = String.fromEnvironment(
     'API_SERVER_URL',
-    defaultValue: 'http://10.0.2.2:5005',
+    defaultValue: 'https://turf-booking-app-op86.onrender.com',
   );
   static const String baseUrl = '$serverUrl/api';
   
