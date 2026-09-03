@@ -372,74 +372,82 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildDrawer(BuildContext context, owner) {
     return Drawer(
       backgroundColor: Colors.white,
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.only(top: 80, left: 24, bottom: 40, right: 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: const Color(0xFF00A86B).withOpacity(0.05))),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00A86B).withOpacity(0.1)), shape: BoxShape.circle),
-                  child: const CircleAvatar(
-                    radius: 35,
-                    backgroundColor: Color(0xFFF8FBF9),
-                    child: Icon(Icons.person_rounded, size: 40, color: Color(0xFF00A86B)),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.only(top: 60, left: 24, bottom: 24, right: 24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border(bottom: BorderSide(color: const Color(0xFF00A86B).withOpacity(0.05))),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00A86B).withOpacity(0.1)), shape: BoxShape.circle),
+                          child: const CircleAvatar(
+                            radius: 32,
+                            backgroundColor: Color(0xFFF8FBF9),
+                            child: Icon(Icons.person_rounded, size: 36, color: Color(0xFF00A86B)),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          owner?.name?.toUpperCase() ?? 'OWNER',
+                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w900, color: const Color(0xFF1E293B), letterSpacing: 1),
+                        ),
+                        Text(
+                          owner?.email?.toLowerCase() ?? '',
+                          style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B), fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  owner?.name?.toUpperCase() ?? 'OWNER',
-                  style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w900, color: const Color(0xFF1E293B), letterSpacing: 1),
-                ),
-                Text(
-                  owner?.email?.toLowerCase() ?? '',
-                  style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B), fontWeight: FontWeight.w500),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  _buildDrawerItem(Icons.dashboard_rounded, 'DASHBOARD', () => Navigator.pop(context), isActive: true),
+                  _buildDrawerItem(Icons.analytics_rounded, 'ANALYTICS', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/analytics');
+                  }),
+                  _buildDrawerItem(Icons.stadium_rounded, 'VENUES', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/manage-venues');
+                  }),
+                  _buildDrawerItem(Icons.event_note_rounded, 'BOOKINGS', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/bookings');
+                  }),
+                  _buildDrawerItem(Icons.people_alt_rounded, 'STAFF', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/staff-list');
+                  }),
+                  _buildDrawerItem(Icons.payments_rounded, 'PAYOUTS', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/payouts');
+                  }),
+                  _buildDrawerItem(Icons.emoji_events_rounded, 'TOURNAMENTS', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/tournaments');
+                  }),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-          _buildDrawerItem(Icons.dashboard_rounded, 'DASHBOARD', () => Navigator.pop(context), isActive: true),
-          _buildDrawerItem(Icons.analytics_rounded, 'ANALYTICS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/analytics');
-          }),
-          _buildDrawerItem(Icons.stadium_rounded, 'VENUES', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/manage-venues');
-          }),
-          _buildDrawerItem(Icons.event_note_rounded, 'BOOKINGS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/bookings');
-          }),
-          _buildDrawerItem(Icons.people_alt_rounded, 'STAFF', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/staff-list');
-          }),
-          _buildDrawerItem(Icons.payments_rounded, 'PAYOUTS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/payouts');
-          }),
-          _buildDrawerItem(Icons.emoji_events_rounded, 'TOURNAMENTS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/tournaments');
-          }),
-
-          const Spacer(),
-          const Divider(color: Color(0xFFF1F5F9)),
-          _buildDrawerItem(Icons.logout_rounded, 'LOGOUT', () {
-            Provider.of<AuthProvider>(context, listen: false).logout();
-            Navigator.pushReplacementNamed(context, '/login');
-          }, color: Colors.redAccent),
-          const SizedBox(height: 40),
-        ],
+            const Divider(color: Color(0xFFF1F5F9), height: 1),
+            _buildDrawerItem(Icons.logout_rounded, 'LOGOUT', () {
+              Provider.of<AuthProvider>(context, listen: false).logout();
+              Navigator.pushReplacementNamed(context, '/login');
+            }, color: Colors.redAccent),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }

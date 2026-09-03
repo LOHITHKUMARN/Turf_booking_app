@@ -14,10 +14,19 @@
 const serializeUser = (user) => {
     if (!user) return null;
     const { id, owner, assignedTurf, turfsOwned, bookings, ...rest } = user;
+    let assignedTurfId = rest.assignedTurfId;
+    if (assignedTurf) {
+        assignedTurfId = {
+            _id: assignedTurf.id,
+            id: assignedTurf.id,
+            name: assignedTurf.name
+        };
+    }
     return {
         _id: id,
         id,
         ...rest,
+        assignedTurfId,
         role: user.role ? user.role.toLowerCase() : 'customer',
         status: user.status ? user.status.toLowerCase() : 'active',
         createdAt: user.createdAt ? new Date(user.createdAt).toISOString() : undefined,

@@ -94,6 +94,13 @@ class _StaffListScreenState extends State<StaffListScreen> {
 
   Widget _buildStaffCard(dynamic staff) {
     final assignedTurf = staff['assignedTurfId'];
+    String? turfName;
+    if (assignedTurf is Map) {
+      turfName = assignedTurf['name']?.toString();
+    } else if (assignedTurf != null && assignedTurf.toString().isNotEmpty) {
+      turfName = assignedTurf.toString();
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -129,17 +136,17 @@ class _StaffListScreenState extends State<StaffListScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: assignedTurf != null ? Colors.blue.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                color: turfName != null ? Colors.blue.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                assignedTurf != null 
-                    ? 'Turf: ${assignedTurf['name']}${staff['assignedGround'] != null && staff['assignedGround'] != '' ? ' (${staff['assignedGround']})' : ''}' 
+                turfName != null 
+                    ? 'Turf: $turfName${staff['assignedGround'] != null && staff['assignedGround'] != '' ? ' (${staff['assignedGround']})' : ''}' 
                     : 'NOT ASSIGNED',
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: assignedTurf != null ? Colors.blue : Colors.orange,
+                  color: turfName != null ? Colors.blue : Colors.orange,
                 ),
               ),
             ),
@@ -264,10 +271,13 @@ class _StaffListScreenState extends State<StaffListScreen> {
                       leading: const Icon(Icons.location_on_outlined, color: Colors.blue),
                       title: Text(ground, style: const TextStyle(fontWeight: FontWeight.w500)),
                       onTap: () async {
-                        final success = await turfProvider.assignTurfToStaff(staff['_id'], turf.id, groundName: ground);
-                        Navigator.pop(context);
+                        final navigator = Navigator.of(context);
+                        final messenger = ScaffoldMessenger.of(context);
+                        final staffId = staff['_id'] ?? staff['id'];
+                        final success = await turfProvider.assignTurfToStaff(staffId, turf.id, groundName: ground);
+                        navigator.pop();
                         if (success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             const SnackBar(content: Text('Staff assigned to ground successfully!')),
                           );
                         }
