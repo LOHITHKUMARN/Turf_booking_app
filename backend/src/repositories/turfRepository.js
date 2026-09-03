@@ -153,12 +153,43 @@ const updateRating = async (turfId, avgRating, numReviews) => {
     });
 };
 
+const findAllTurfs = async () => {
+    if (isPostgres()) {
+        const turfs = await prisma.turf.findMany({
+            include: {
+                owner: {
+                    select: { id: true, name: true, email: true, phone: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        return turfs.map(serializeTurf);
+    }
+    return await TurfMongo.find({}).populate('ownerId', 'name email phone');
+};
+
+const updateTurfStatus = async (id, status) => {
+    if (isPostgres()) {
+        const updated = await prisma.turf.update({
+            where: { id: String(id) },
+            data: { status }
+        });
+        return serializeTurf(updated);
+    }
+    const turf = await TurfMongo.findById(id);
+    if (!turf) return null;
+    turf.status = status;
+    return await turf.save();
+};
+
 module.exports = {
     findApprovedTurfs,
+    findAllTurfs,
     findTurfById,
     findTurfsByOwner,
     createTurf,
     updateTurf,
+    updateTurfStatus,
     updateRating,
     isPostgres
 };

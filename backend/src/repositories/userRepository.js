@@ -149,9 +149,45 @@ const updateFCMToken = async (userId, token) => {
     return user;
 };
 
+const findAllUsers = async () => {
+    if (isPostgres()) {
+        const users = await prisma.user.findMany({
+            orderBy: { createdAt: 'desc' }
+        });
+        return users.map(serializeUser);
+    }
+    return await UserMongo.find({}).select('-password');
+};
+
+const updateUserStatus = async (id, status) => {
+    if (isPostgres()) {
+        const user = await prisma.user.update({
+            where: { id: String(id) },
+            data: { status }
+        });
+        return serializeUser(user);
+    }
+    const user = await UserMongo.findById(id);
+    if (!user) return null;
+    user.status = status;
+    return await user.save();
+};
+
+const deleteUser = async (id) => {
+    if (isPostgres()) {
+        return await prisma.user.delete({
+            where: { id: String(id) }
+        });
+    }
+    return await UserMongo.findByIdAndDelete(id);
+};
+
 module.exports = {
     findByEmailOrPhone,
     findById,
+    findAllUsers,
+    updateUserStatus,
+    deleteUser,
     createUser,
     matchPassword,
     createRefreshToken,
