@@ -2,52 +2,86 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { protect } = require('../middlewares/authMiddleware');
+const supabase = require('../config/supabaseClient');
+const logger = require('../services/logger');
 
-// Configure storage
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
-    }
-});
+// Ensure local uploads directory exists as fallback
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-// File filter
-const fileFilter = (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-        cb(null, true);
-    } else {
-        cb(new Error('Only images are allowed'), false);
-    }
-};
-
+// Memory storage to handle file buffer before uploading to Supabase Storage
 const upload = multer({
-    storage,
-    fileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images are allowed'), false);
+        }
+    },
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// @desc    Upload an image
+// @desc    Upload an image (Supabase Storage with local disk fallback)
 // @route   POST /api/upload
 // @access  Private
-router.post('/', protect, (req, res, next) => {
-    console.log('Upload request received');
-    next();
-}, upload.single('image'), (req, res) => {
-    console.log('File processing complete');
-    if (!req.file) {
-        console.log('No file in request');
-        return res.status(400).json({ message: 'No file uploaded' });
-    }
+router.post('/', protect, upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
 
-    console.log('File uploaded:', req.file.filename);
-    const filePath = `/uploads/${req.file.filename}`;
-    res.status(200).json({
-        message: 'Image uploaded successfully',
-        url: filePath
-    });
+        const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${sanitizedName}`;
+
+        // 1. Try Supabase Storage (Global CDN)
+        if (supabase) {
+            try {
+                const bucketName = 'turf-media';
+                const { data, error } = await supabase.storage
+                    .from(bucketName)
+                    .upload(fileName, req.file.buffer, {
+                        contentType: req.file.mimetype,
+                        upsert: true
+                    });
+
+                if (!error && data) {
+                    const { data: publicUrlData } = supabase.storage
+                        .from(bucketName)
+                        .getPublicUrl(fileName);
+
+                    logger.info(`File uploaded to Supabase Storage: ${publicUrlData.publicUrl}`);
+                    return res.status(200).json({
+                        message: 'Image uploaded successfully to cloud storage',
+                        url: publicUrlData.publicUrl
+                    });
+                } else if (error) {
+                    logger.warn('Supabase storage upload failed, falling back to disk:', { error: error.message });
+                }
+            } catch (storageErr) {
+                logger.warn('Error in Supabase storage, using fallback:', { error: storageErr.message });
+            }
+        }
+
+        // 2. Fallback to local disk storage
+        const diskPath = path.join(uploadDir, fileName);
+        fs.writeFileSync(diskPath, req.file.buffer);
+
+        const localUrl = `/uploads/${fileName}`;
+        logger.info(`File saved locally: ${localUrl}`);
+
+        return res.status(200).json({
+            message: 'Image uploaded successfully',
+            url: localUrl
+        });
+    } catch (err) {
+        logger.error('Upload error', { error: err.message });
+        res.status(500).json({ message: err.message });
+    }
 });
 
 module.exports = router;

@@ -1,5 +1,9 @@
 class ApiConstants {
-  static const String baseUrl = 'http://10.0.2.2:5005/api'; // For Android Emulator
+  // Configurable at build time via --dart-define=API_BASE_URL=https://your-domain.com/api
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://10.0.2.2:5005/api',
+  );
   
   static const String loginUrl = '$baseUrl/auth/login';
   static const String signupUrl = '$baseUrl/auth/signup';

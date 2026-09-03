@@ -1,0 +1,511 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ──────────────────── Enums ────────────────────
+
+enum Role {
+  customer
+  staff
+  owner
+  admin
+}
+
+enum UserStatus {
+  active
+  blocked
+}
+
+enum TurfType {
+  indoor
+  outdoor
+  both
+}
+
+enum TurfStatus {
+  pending
+  approved
+  suspended
+  blocked
+}
+
+enum OperationalStatus {
+  normal
+  wet
+  maintenance
+  power_issue @map("power-issue")
+  heavy_rain  @map("heavy-rain")
+}
+
+enum DayOfWeek {
+  Monday
+  Tuesday
+  Wednesday
+  Thursday
+  Friday
+  Saturday
+  Sunday
+}
+
+enum PaymentMethod {
+  cash
+  upi
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  refunded
+}
+
+enum BookingStatus {
+  confirmed
+  cancelled
+  completed
+  checked_in @map("checked-in")
+  no_show    @map("no-show")
+}
+
+enum TournamentStatus {
+  pending_approval
+  draft
+  open
+  ongoing
+  completed
+  cancelled
+  rejected
+}
+
+enum TeamStatus {
+  pending
+  approved
+  rejected
+}
+
+enum MatchStatus {
+  scheduled
+  live
+  completed
+  verified
+  cancelled
+}
+
+enum PayoutStatus {
+  pending
+  processed
+  failed
+}
+
+enum AnnouncementType {
+  General
+  Emergency
+  Shift_Update @map("Shift Update")
+}
+
+enum AttendanceStatus {
+  Present
+  Late
+}
+
+enum MaintenanceCategory {
+  Ground
+  Lights
+  Amenities
+  Other
+}
+
+enum MaintenanceStatus {
+  Pending
+  In_Progress @map("In Progress")
+  Resolved
+}
+
+enum IncidentType {
+  Injury
+  Damage
+  Crowd_Issue @map("Crowd Issue")
+  Other
+}
+
+enum IncidentSeverity {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum IncidentStatus {
+  Reported
+  Under_Investigation @map("Under Investigation")
+  Resolved
+}
+
+enum AuditTargetType {
+  Turf
+  User
+  System
+  Payout
+}
+
+// ──────────────────── Models ────────────────────
+
+model User {
+  id              String       @id @default(uuid())
+  name            String
+  email           String       @unique
+  phone           String       @unique
+  password        String
+  role            Role         @default(customer)
+  status          UserStatus   @default(active)
+  ownerId         String?
+  owner           User?        @relation("OwnerStaff", fields: [ownerId], references: [id], onDelete: SetNull)
+  staff           User[]       @relation("OwnerStaff")
+  assignedTurfId  String?
+  assignedTurf    Turf?        @relation("AssignedStaff", fields: [assignedTurfId], references: [id], onDelete: SetNull)
+  assignedGround  String       @default("")
+  profileImage    String       @default("")
+  fcmTokens       String[]     @default([])
+  
+  // Relationships
+  turfsOwned           Turf[]            @relation("TurfOwner")
+  bookings             Booking[]
+  tournamentsHosted    Tournament[]      @relation("TournamentOwner")
+  matchesRefereed      TournamentMatch[] @relation("StaffRefereed")
+  teamsCaptained       TournamentTeam[]  @relation("TeamCaptain")
+  payouts              Payout[]
+  attendanceLogs       Attendance[]
+  maintenancesReported Maintenance[]
+  incidentsReported    Incident[]
+  reviews              Review[]
+  adminAuditLogs       AdminAuditLog[]
+  refreshTokens        RefreshToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([status])
+}
+
+model Turf {
+  id                String            @id @default(uuid())
+  ownerId           String
+  owner             User              @relation("TurfOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  name              String
+  turfType          TurfType          @default(both)
+  city              String
+  area              String
+  grounds           String[]          @default([])
+  sports            String[]          @default([])
+  amenities         String[]          @default([])
+  images            String[]          @default([])
+  status            TurfStatus        @default(pending)
+  operationalStatus OperationalStatus @default(normal)
+
+  // Settings
+  minBookingDuration  Int    @default(1)
+  advanceBookingLimit Int    @default(7)
+  bookingCutoffTime   Int    @default(2)
+  gracePeriod         Int    @default(15)
+  maxMembers          Int    @default(10)
+  upiId               String @default("")
+  taxPercentage       Float  @default(0.0)
+  avgRating           Float  @default(0.0)
+  numReviews          Int    @default(0)
+
+  // Relationships
+  assignedStaff  User[]            @relation("AssignedStaff")
+  slots          Slot[]
+  bookings       Booking[]
+  tournaments    Tournament[]
+  announcements  Announcement[]
+  attendanceLogs Attendance[]
+  maintenances   Maintenance[]
+  incidents      Incident[]
+  reviews        Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([city])
+}
+
+model Slot {
+  id         String    @id @default(uuid())
+  turfId     String
+  turf       Turf      @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  sport      String
+  groundName String    @default("")
+  dayOfWeek  DayOfWeek
+  startTime  String    // "HH:mm"
+  endTime    String    // "HH:mm"
+  price      Float
+  isBlocked  Boolean   @default(false)
+
+  bookings   Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([turfId, groundName, sport, dayOfWeek, startTime])
+  @@index([turfId, dayOfWeek])
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  turfId        String
+  turf          Turf          @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  slotId        String
+  slot          Slot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  groundName    String        @default("")
+  bookingDate   DateTime
+  totalAmount   Float
+  taxAmount     Float         @default(0.0)
+  paymentMethod PaymentMethod @default(cash)
+  isPaid        Boolean       @default(false)
+  paymentStatus PaymentStatus @default(pending)
+  paymentId     String?
+  bookingStatus BookingStatus @default(confirmed)
+  transactionId String?
+  checkInTime   DateTime?
+  checkOutTime  DateTime?
+  staffNotes    String        @default("")
+  isOverstayed  Boolean       @default(false)
+  extraCharges  Json          @default("[]")
+
+  review        Review?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([turfId, bookingDate])
+  @@index([userId])
+  @@index([slotId])
+}
+
+model Tournament {
+  id                   String           @id @default(uuid())
+  ownerId              String
+  owner                User             @relation("TournamentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  turfId               String
+  turf                 Turf             @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  name                 String
+  description          String
+  sportsType           String
+  teamSize             Int
+  maxTeams             Int
+  registrationFee      Float            @default(0.0)
+  prizePool            String           @default("")
+  startDate            DateTime
+  endDate              DateTime
+  registrationDeadline DateTime
+  rules                String[]         @default([])
+  status               TournamentStatus @default(pending_approval)
+  adminNotes           String           @default("")
+  bannerImage          String           @default("")
+
+  teams   TournamentTeam[]
+  matches TournamentMatch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([turfId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+model TournamentTeam {
+  id            String        @id @default(uuid())
+  tournamentId  String
+  tournament    Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  captainId     String
+  captain       User          @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: Cascade)
+  name          String
+  members       String[]      @default([])
+  status        TeamStatus    @default(pending)
+  paymentStatus PaymentStatus @default(pending)
+  transactionId String        @default("")
+
+  homeMatches TournamentMatch[] @relation("Team1Matches")
+  awayMatches TournamentMatch[] @relation("Team2Matches")
+  matchesWon  TournamentMatch[] @relation("WonMatches")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId])
+  @@index([captainId])
+}
+
+model TournamentMatch {
+  id           String          @id @default(uuid())
+  tournamentId String
+  tournament   Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  team1Id      String?
+  team1        TournamentTeam? @relation("Team1Matches", fields: [team1Id], references: [id], onDelete: SetNull)
+  team2Id      String?
+  team2        TournamentTeam? @relation("Team2Matches", fields: [team2Id], references: [id], onDelete: SetNull)
+  winnerId     String?
+  winner       TournamentTeam? @relation("WonMatches", fields: [winnerId], references: [id], onDelete: SetNull)
+  score1       Int             @default(0)
+  score2       Int             @default(0)
+  round        Int
+  matchIndex   Int
+  startTime    DateTime?
+  groundName   String          @default("")
+  staffId      String?
+  staff        User?           @relation("StaffRefereed", fields: [staffId], references: [id], onDelete: SetNull)
+  isVerified   Boolean         @default(false)
+  staffNotes   String          @default("")
+  status       MatchStatus     @default(scheduled)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId])
+  @@index([staffId])
+}
+
+model Payout {
+  id           String       @id @default(uuid())
+  ownerId      String
+  owner        User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  amount       Float
+  status       PayoutStatus @default(pending)
+  requestedAt  DateTime     @default(now())
+  processedAt  DateTime?
+  bankDetails  Json?
+  statementUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+model Announcement {
+  id        String           @id @default(uuid())
+  turfId    String
+  turf      Turf             @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      AnnouncementType @default(General)
+  isPublic  Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([turfId])
+}
+
+model Attendance {
+  id         String           @id @default(uuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turfId     String
+  turf       Turf             @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  groundName String           @default("")
+  clockIn    DateTime
+  clockOut   DateTime?
+  status     AttendanceStatus @default(Present)
+  workHours  Float            @default(0.0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, turfId])
+}
+
+model Maintenance {
+  id          String              @id @default(uuid())
+  turfId      String
+  turf        Turf                @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  reporterId  String
+  reporter    User                @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  category    MaintenanceCategory
+  description String
+  images      String[]            @default([])
+  status      MaintenanceStatus   @default(Pending)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([turfId])
+}
+
+model Incident {
+  id          String           @id @default(uuid())
+  turfId      String
+  turf        Turf             @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  reporterId  String
+  reporter    User             @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  type        IncidentType
+  severity    IncidentSeverity @default(Low)
+  description String
+  images      String[]         @default([])
+  status      IncidentStatus   @default(Reported)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([turfId])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turfId    String
+  turf      Turf     @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([turfId])
+}
+
+model AdminAuditLog {
+  id         String          @id @default(uuid())
+  adminId    String
+  admin      User            @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  action     String
+  targetId   String
+  targetType AuditTargetType
+  details    Json            @default("{}")
+  ipAddress  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([adminId, createdAt])
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiryDate DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}

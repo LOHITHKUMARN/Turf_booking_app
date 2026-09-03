@@ -1,5 +1,9 @@
 class ApiConstants {
-  static const String serverUrl = 'http://10.0.2.2:5005';
+  // Configurable at build time via --dart-define=API_SERVER_URL=https://your-domain.com
+  static const String serverUrl = String.fromEnvironment(
+    'API_SERVER_URL',
+    defaultValue: 'http://10.0.2.2:5005',
+  );
   static const String baseUrl = '$serverUrl/api';
   
   static const String loginUrl = '$baseUrl/auth/login';

@@ -2,14 +2,15 @@
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-green.svg?style=for-the-badge&logo=node.js)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-black.svg?style=for-the-badge&logo=express)](https://expressjs.com/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248.svg?style=for-the-badge&logo=mongodb)](https://www.mongodb.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3ECF8E.svg?style=for-the-badge&logo=supabase)](https://supabase.com/)
+[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748.svg?style=for-the-badge&logo=prisma)](https://www.prisma.io/)
 [![Flutter](https://img.shields.io/badge/Flutter-3.8+-02569B.svg?style=for-the-badge&logo=flutter)](https://flutter.dev/)
 [![Dart](https://img.shields.io/badge/Dart-3.x-0175C2.svg?style=for-the-badge&logo=dart)](https://dart.dev/)
 [![Socket.io](https://img.shields.io/badge/Socket.IO-Real--Time-010101.svg?style=for-the-badge&logo=socket.io)](https://socket.io/)
 [![Firebase](https://img.shields.io/badge/Firebase-FCM-FFCA28.svg?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-**Turf** is an enterprise-grade, full-stack ecosystem engineered to streamline and elevate sports venue operations and community sports engagement. The platform synchronizes **four specialized Flutter mobile applications** through a high-performance **Node.js/Express REST API and Socket.IO real-time engine**, delivering dedicated, role-tailored experiences for Players, Turf Owners, On-Ground Staff, and Platform Administrators.
+**Turf** is an enterprise-grade, full-stack ecosystem engineered to streamline and elevate sports venue operations and community sports engagement. The platform synchronizes **four specialized Flutter mobile applications** through a high-performance **Node.js/Express REST API, Supabase PostgreSQL with Prisma ORM, and Socket.IO real-time engine**, delivering dedicated, role-tailored experiences for Players, Turf Owners, On-Ground Staff, and Platform Administrators.
 
 ---
 
@@ -54,9 +55,10 @@
                          ┌────────────────────┼────────────────────┐
                          │                    │                    │
              ┌───────────┴────────────┐       │       ┌────────────┴───────────┐
-             │    Staff Mobile App    │       │       │    MongoDB Database    │
-             │   (Operations / QR)    │       │       │ (15 Structured Models) │
-             └────────────────────────┘       │       └────────────────────────┘
+             │    Staff Mobile App    │       │       │  Supabase PostgreSQL   │
+             │   (Operations / QR)    │       │       │ (15 Relational Models) │
+             └────────────────────────┘       │       │     via Prisma ORM     │
+                                              │       └────────────────────────┘
                                               ▼
                                  ┌─────────────────────────┐
                                  │ Firebase Cloud Messages │
@@ -130,7 +132,7 @@ The central backend is engineered with **Node.js** and **Express.js**, prioritiz
 
 ## 🗄️ Database & Data Models
 
-Built on **MongoDB Atlas** with **Mongoose ORM**, containing 15 specialized models:
+Built on **Supabase PostgreSQL** with **Prisma ORM**, containing 15 relational models with strong data integrity, foreign key constraints, compound indexes, and atomic transaction support:
 
 | Model | Purpose / Description |
 | :--- | :--- |
@@ -265,8 +267,9 @@ Turf_booking_app/
 ### Prerequisites
 * **Node.js**: `v18.0.0` or higher
 * **Flutter SDK**: `v3.8.0` or higher
-* **MongoDB**: Local instance or MongoDB Atlas URI
-* **Firebase Project**: (Optional) for push notifications
+* **Supabase PostgreSQL**: Managed Supabase project or PostgreSQL instance (v14+)
+* **Prisma CLI**: Integrated for migrations and type-safe schema synchronization
+* **Firebase Project**: (Optional) for push notifications (FCM)
 
 ---
 
@@ -285,23 +288,37 @@ Turf_booking_app/
 3. **Configure Environment Variables:**
    Create a `.env` file in `backend/`:
    ```env
-   PORT=5000
-   MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/turf_db?retryWrites=true&w=majority
+   PORT=5005
+   NODE_ENV=development
    JWT_SECRET=your_super_secret_jwt_key_here
-   JWT_REFRESH_SECRET=your_super_secret_refresh_key_here
-   JWT_EXPIRES_IN=1h
-   JWT_REFRESH_EXPIRES_IN=7d
+
+   # Database Provider: 'postgres'
+   DB_PROVIDER=postgres
+
+   # Supabase PostgreSQL Configuration
+   DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+   DIRECT_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+
+   # Supabase API Keys (Optional - for Supabase Storage/Realtime)
+   SUPABASE_URL=https://[YOUR-PROJECT-REF].supabase.co
+   SUPABASE_ANON_KEY=your_supabase_anon_key_here
    ```
 
-4. **(Optional) Configure Firebase FCM:**
+4. **Run Prisma Migrations:**
+   ```bash
+   npx prisma migrate dev
+   ```
+
+5. **(Optional) Configure Firebase FCM:**
    Copy `backend/src/config/serviceAccountKey.example.json` to `backend/src/config/serviceAccountKey.json` and fill in your Firebase credentials.
 
-5. **Seed the database (Optional):**
+6. **Seed Initial Baseline Accounts:**
+   Seeds Admin, Owner, Staff, Customer, and sample venue with 49 active slots:
    ```bash
-   node seed.js
+   node scripts/seed_supabase.js
    ```
 
-6. **Start the API Server:**
+7. **Start the API Server:**
    ```bash
    # Development mode with hot-reload
    npm run dev
@@ -331,10 +348,10 @@ For any of the four client apps (`turf_customer`, `turf_owner`, `turf_staff`, `t
    Open `lib/core/constants/api_constants.dart` and set your backend host URL:
    ```dart
    // For local development on Android Emulator:
-   const String kBaseUrl = 'http://10.0.2.2:5000/api';
+   const String kBaseUrl = 'http://10.0.2.2:5005/api';
 
    // For physical device testing over LAN:
-   // const String kBaseUrl = 'http://192.168.1.XX:5000/api';
+   // const String kBaseUrl = 'http://192.168.1.XX:5005/api';
    ```
 
 4. **Run the application:**
@@ -352,11 +369,11 @@ For any of the four client apps (`turf_customer`, `turf_owner`, `turf_staff`, `t
 ## 💼 Portfolio / Resume Showcase
 
 > **Turf — Full-Stack Multi-Role Sports Venue Ecosystem**
-> * **Architecture:** Designed and built a synchronized ecosystem featuring **4 specialized Flutter mobile apps** (Customer, Owner, Staff, Admin) backed by a unified **Node.js/MongoDB REST API**.
+> * **Architecture:** Designed and built a synchronized ecosystem featuring **4 specialized Flutter mobile apps** (Customer, Owner, Staff, Admin) backed by a unified **Node.js/Express REST API powered by Supabase PostgreSQL and Prisma ORM**.
 > * **Real-Time Scalability:** Implemented **Socket.IO** rooms for live sidelines match scoring and venue broadcasts, combined with **Firebase Cloud Messaging (FCM)** for automated transactional alerts.
-> * **Complex Business Logic:** Built an anti-collision slot reservation engine (3,000+ slots), automated tournament bracket generator (Knockout/League), and owner payout ledger.
+> * **Complex Business Logic:** Built an anti-collision slot reservation engine with interactive transactions, automated tournament bracket generator (Knockout/League), and owner payout ledger.
 > * **Security & Quality:** Engineered strict RBAC middleware, JWT session rotation, Zod payload validation, and digital QR ticket verification.
-> * **Tech Stack:** Flutter, Dart, Node.js, Express.js, MongoDB, Mongoose, Socket.IO, Firebase FCM, Provider, JWT, Bcrypt.
+> * **Tech Stack:** Flutter, Dart, Node.js, Express.js, PostgreSQL, Supabase, Prisma ORM, Socket.IO, Firebase FCM, Provider, JWT, Bcrypt, Zod.
 
 ---
 

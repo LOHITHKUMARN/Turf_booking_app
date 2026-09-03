@@ -1,7 +1,7 @@
-const User = require('../models/User');
-const Turf = require('../models/Turf');
-const Slot = require('../models/Slot');
-const Booking = require('../models/Booking');
+const userRepository = require('../repositories/userRepository');
+const turfRepository = require('../repositories/turfRepository');
+const slotRepository = require('../repositories/slotRepository');
+const bookingRepository = require('../repositories/bookingRepository');
 const logger = require('../services/logger');
 const { getCache, setCache, deleteCache } = require('../services/redis');
 const { emitToTurf } = require('../services/socket');
@@ -12,12 +12,11 @@ const { sendToUser } = require('../services/notificationService');
 // @access  Public
 const getTurfs = async (req, res) => {
     try {
-        // Check cache first
         const cached = await getCache('turfs:all');
         if (cached) return res.json(cached);
 
-        const turfs = await Turf.find({ status: { $ne: 'blocked' } });
-        await setCache('turfs:all', turfs, 120); // cache for 2 minutes
+        const turfs = await turfRepository.findApprovedTurfs();
+        await setCache('turfs:all', turfs, 120);
         res.json(turfs);
     } catch (error) {
         logger.error('getTurfs error', { error: error.message });
@@ -31,20 +30,16 @@ const getTurfs = async (req, res) => {
 const getTurfById = async (req, res) => {
     try {
         const turfId = req.params.id;
-        
-        // Check cache first
         const cacheKey = `turf:${turfId}`;
         const cached = await getCache(cacheKey);
         if (cached) return res.json(cached);
 
-        const turf = await Turf.findOne({ _id: turfId, status: { $ne: 'blocked' } })
-            .populate('ownerId', 'name email phone');
-            
+        const turf = await turfRepository.findTurfById(turfId);
         if (!turf) {
             return res.status(404).json({ message: 'Turf not found or is blocked' });
         }
 
-        await setCache(cacheKey, turf, 120); // cache for 2 minutes
+        await setCache(cacheKey, turf, 120);
         res.json(turf);
     } catch (error) {
         logger.error('getTurfById error', { error: error.message, turfId: req.params.id });
@@ -60,12 +55,10 @@ const getTurfSlots = async (req, res) => {
         const { date, groundName } = req.query; // Expecting YYYY-MM-DD
         const turfId = req.params.turfId;
 
-        // Check cache first
         const cacheKey = `slots:${turfId}:${date}:${groundName || 'all'}`;
         const cached = await getCache(cacheKey);
         if (cached) return res.json(cached);
 
-        // Robust normalization using split to avoid timezone shifts
         const [year, month, day] = date.split('-').map(Number);
         const startOfUtcDay = new Date(Date.UTC(year, month - 1, day));
         const endOfUtcDay = new Date(startOfUtcDay);
@@ -74,47 +67,36 @@ const getTurfSlots = async (req, res) => {
         const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const dayOfWeek = days[startOfUtcDay.getUTCDay()];
 
-        const query = { turfId, dayOfWeek };
-        if (groundName) {
-            query.groundName = groundName;
-        }
+        const slots = await slotRepository.findSlots({ turfId, dayOfWeek, groundName });
 
-        const slots = await Slot.find(query);
+        const bookings = await bookingRepository.findBookingsForDateRange(turfId, startOfUtcDay, endOfUtcDay);
+        const bookedSlotIds = bookings.map(b => String(b.slotId._id || b.slotId.id || b.slotId));
 
-        // Fetch bookings for this UTC day to mark slots as booked
-        const bookings = await Booking.find({
-            turfId,
-            bookingDate: {
-                $gte: startOfUtcDay,
-                $lt: endOfUtcDay
-            },
-            bookingStatus: { $ne: 'cancelled' }
-        });
-
-        const bookedSlotIds = bookings.map(b => b.slotId.toString());
-
-        // Filter expired slots for today with 15 mins grace period
         const isToday = startOfUtcDay.toISOString().split('T')[0] === new Date().toISOString().split('T')[0];
         const currentTime = new Date();
 
-        const enrichedSlots = slots.map(slot => ({
-            ...slot._doc,
-            isBooked: bookedSlotIds.includes(slot._id.toString())
-        })).filter(slot => {
+        const enrichedSlots = slots.map(slot => {
+            const slotDoc = slot._doc || slot;
+            const slotIdStr = String(slotDoc._id || slotDoc.id);
+            return {
+                ...slotDoc,
+                isBooked: bookedSlotIds.includes(slotIdStr)
+            };
+        }).filter(slot => {
             if (!isToday) return true;
 
             const [hours, minutes] = slot.startTime.split(':').map(Number);
             const slotTime = new Date();
             slotTime.setHours(hours, minutes, 0, 0);
 
-            // 15 minutes grace period: if slotTime + 15 mins > current time, it's still bookable
             const graceTime = new Date(slotTime.getTime() + 15 * 60000);
             return graceTime > currentTime;
         });
 
-        await setCache(cacheKey, enrichedSlots, 60); // cache for 1 minute
+        await setCache(cacheKey, enrichedSlots, 60);
         res.json(enrichedSlots);
     } catch (error) {
+        logger.error('getTurfSlots error', { error: error.message });
         res.status(500).json({ message: error.message });
     }
 };
@@ -125,70 +107,35 @@ const getTurfSlots = async (req, res) => {
 const createBooking = async (req, res) => {
     try {
         const { turfId, slotId, bookingDate, totalAmount, paymentMethod } = req.body;
-        console.log(`[BOOKING] Request for turf: ${turfId}, slot: ${slotId}, date: ${bookingDate}`);
-
-        // Robust standardization to UTC midnight using string splitting
         const [year, month, day] = bookingDate.split('-').map(Number);
         const utcDate = new Date(Date.UTC(year, month - 1, day));
 
-        const nextDayUtc = new Date(utcDate);
-        nextDayUtc.setUTCDate(nextDayUtc.getUTCDate() + 1);
-
-        console.log(`[BOOKING] Normalized range: ${utcDate.toISOString()} to ${nextDayUtc.toISOString()}`);
-
-        // Verify slot is not already booked
-        const existingBooking = await Booking.findOne({
-            slotId,
-            bookingDate: {
-                $gte: utcDate,
-                $lt: nextDayUtc
-            },
-            bookingStatus: { $ne: 'cancelled' }
-        });
-
-        if (existingBooking) {
-            console.log(`Attempted double booking rejected for slot: ${slotId} on ${utcDate.toISOString()}`);
-            return res.status(400).json({ message: 'Slot already booked for this date' });
-        }
-
-        const slot = await Slot.findById(slotId);
+        const slot = await slotRepository.findSlotById(slotId);
         if (!slot) {
             return res.status(404).json({ message: 'Slot not found' });
         }
 
-        // Validate expiration for today
-        const isToday = utcDate.toISOString().split('T')[0] === new Date().toISOString().split('T')[0];
-        if (isToday) {
-            const [hours, minutes] = slot.startTime.split(':').map(Number);
-            const slotTime = new Date();
-            slotTime.setHours(hours, minutes, 0, 0);
-            const graceTime = new Date(slotTime.getTime() + 15 * 60000);
-            if (graceTime <= new Date()) {
-                return res.status(400).json({ message: 'Slot has expired' });
-            }
-        }
-
-        const turf = await Turf.findById(turfId);
+        const turf = await turfRepository.findTurfById(turfId);
         if (!turf) {
             return res.status(404).json({ message: 'Turf not found' });
         }
 
         const baseAmount = totalAmount || 0;
-        const taxPercentage = turf.settings?.taxPercentage || 0;
+        const taxPercentage = turf.settings?.taxPercentage || turf.taxPercentage || 0;
         const taxAmount = baseAmount * (taxPercentage / 100);
         const finalAmount = baseAmount + taxAmount;
 
-        const booking = await Booking.create({
-            userId: req.user._id,
+        const booking = await bookingRepository.createBookingAtomic({
+            userId: req.user._id || req.user.id,
             turfId,
             slotId,
             groundName: slot.groundName || '',
             bookingDate: utcDate,
             totalAmount: finalAmount,
             taxAmount,
-            paymentStatus: paymentMethod === 'upi' ? 'pending' : 'pending',
-            bookingStatus: 'confirmed',
-            paymentMethod
+            paymentMethod: paymentMethod || 'cash',
+            paymentStatus: 'pending',
+            bookingStatus: 'confirmed'
         });
 
         // Invalidate slot cache & emit real-time event
@@ -197,33 +144,23 @@ const createBooking = async (req, res) => {
         emitToTurf(turfId, 'slotBooked', {
             slotId,
             bookingDate: utcDate.toISOString(),
-            bookedBy: req.user._id,
+            bookedBy: req.user._id || req.user.id,
         });
-        logger.info('Booking created', { bookingId: booking._id, turfId, slotId });
 
-        // Push Notifications for Owner & Staff
-        const owner = await User.findById(turf.ownerId);
+        const ownerId = turf.ownerId?._id || turf.ownerId?.id || turf.ownerId;
+        const owner = await userRepository.findById(ownerId);
         if (owner) {
             await sendToUser(owner, {
                 title: 'New Booking!',
                 body: `You have a new booking at ${turf.name} for ${slot.startTime}.`,
-                data: { bookingId: booking._id.toString(), type: 'new_booking' }
-            });
-        }
-
-        const assignedStaff = await User.find({ assignedTurfId: turfId, role: 'staff' });
-        for (const staff of assignedStaff) {
-            await sendToUser(staff, {
-                title: 'New Assignment',
-                body: `New booking at ${turf.name} (${slot.groundName}) for ${slot.startTime}.`,
-                data: { bookingId: booking._id.toString(), type: 'new_booking' }
+                data: { bookingId: String(booking._id || booking.id), type: 'new_booking' }
             });
         }
 
         res.status(201).json(booking);
     } catch (error) {
         logger.error('createBooking error', { error: error.message });
-        res.status(500).json({ message: error.message });
+        res.status(error.status || 500).json({ message: error.message });
     }
 };
 
@@ -232,14 +169,11 @@ const createBooking = async (req, res) => {
 // @access  Private/Customer
 const getMyBookings = async (req, res) => {
     try {
-        const bookings = await Booking.find({ userId: req.user._id })
-            .populate('turfId', 'name location images')
-            .populate('slotId', 'startTime endTime sport price')
-            .populate('reviewId', 'rating')
-            .sort({ bookingDate: -1 });
-
+        const userId = req.user._id || req.user.id;
+        const bookings = await bookingRepository.findUserBookings(userId);
         res.json(bookings);
     } catch (error) {
+        logger.error('getMyBookings error', { error: error.message });
         res.status(500).json({ message: error.message });
     }
 };
@@ -249,7 +183,8 @@ const getMyBookings = async (req, res) => {
 // @access  Private/Customer
 const getProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('-password');
+        const userId = req.user._id || req.user.id;
+        const user = await userRepository.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -264,7 +199,8 @@ const getProfile = async (req, res) => {
 // @access  Private/Customer
 const updateProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id);
+        const userId = req.user._id || req.user.id;
+        const user = await userRepository.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -278,15 +214,42 @@ const updateProfile = async (req, res) => {
             user.password = req.body.password;
         }
 
-        const updatedUser = await user.save();
-        res.json({
-            _id: updatedUser._id,
-            name: updatedUser.name,
-            email: updatedUser.email,
-            phone: updatedUser.phone,
-            profileImage: updatedUser.profileImage,
-            role: updatedUser.role
-        });
+        if (typeof user.save === 'function') {
+            const updatedUser = await user.save();
+            return res.json({
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                phone: updatedUser.phone,
+                profileImage: updatedUser.profileImage,
+                role: updatedUser.role
+            });
+        } else {
+            const { prisma } = require('../config/db');
+            const bcrypt = require('bcryptjs');
+            const data = {
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                profileImage: user.profileImage
+            };
+            if (req.body.password) {
+                data.password = await bcrypt.hash(req.body.password, 10);
+            }
+            const updated = await prisma.user.update({
+                where: { id: String(userId) },
+                data
+            });
+            return res.json({
+                _id: updated.id,
+                id: updated.id,
+                name: updated.name,
+                email: updated.email,
+                phone: updated.phone,
+                profileImage: updated.profileImage,
+                role: updated.role
+            });
+        }
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -297,55 +260,31 @@ const updateProfile = async (req, res) => {
 // @access  Private/Customer
 const cancelBooking = async (req, res) => {
     try {
-        const booking = await Booking.findById(req.params.id);
+        const booking = await bookingRepository.findBookingById(req.params.id);
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Ensure the booking belongs to the current user
-        if (booking.userId.toString() !== req.user._id.toString()) {
-            return res.status(401).json({ message: 'Not authorized to cancel this booking' });
+        const bookingUserId = String(booking.userId?._id || booking.userId?.id || booking.userId);
+        const reqUserId = String(req.user._id || req.user.id);
+
+        if (bookingUserId !== reqUserId) {
+            return res.status(403).json({ message: 'Not authorized to cancel this booking' });
         }
 
         if (booking.bookingStatus === 'cancelled') {
             return res.status(400).json({ message: 'Booking is already cancelled' });
         }
 
-        booking.bookingStatus = 'cancelled';
-        await booking.save();
-
-        // Invalidate cache & emit real-time event
-        await deleteCache(`slots:${booking.turfId}:*`);
-        emitToTurf(booking.turfId.toString(), 'slotCancelled', {
-            slotId: booking.slotId,
-            bookingDate: booking.bookingDate,
+        const updatedBooking = await bookingRepository.updateBooking(req.params.id, {
+            bookingStatus: 'cancelled'
         });
-        logger.info('Booking cancelled', { bookingId: booking._id });
 
-        // Push Notifications for Owner & Staff
-        const turf = await Turf.findById(booking.turfId);
-        if (turf) {
-            const owner = await User.findById(turf.ownerId);
-            if (owner) {
-                await sendToUser(owner, {
-                    title: 'Booking Cancelled',
-                    body: `A booking for ${turf.name} on ${booking.bookingDate.toDateString()} has been cancelled.`,
-                    data: { bookingId: booking._id.toString(), type: 'booking_cancelled' }
-                });
-            }
+        const turfId = String(booking.turfId?._id || booking.turfId?.id || booking.turfId);
+        await deleteCache(`slots:${turfId}:*`);
 
-            const assignedStaff = await User.find({ assignedTurfId: booking.turfId, role: 'staff' });
-            for (const staff of assignedStaff) {
-                await sendToUser(staff, {
-                    title: 'Booking Cancelled',
-                    body: `The booking at ${turf.name} for ${booking.bookingDate.toDateString()} has been cancelled.`,
-                    data: { bookingId: booking._id.toString(), type: 'booking_cancelled' }
-                });
-            }
-        }
-
-        res.json({ message: 'Booking cancelled successfully', booking });
+        res.json({ message: 'Booking cancelled successfully', booking: updatedBooking });
     } catch (error) {
         logger.error('cancelBooking error', { error: error.message });
         res.status(500).json({ message: error.message });

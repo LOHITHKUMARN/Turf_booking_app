@@ -26,7 +26,7 @@ class ApiService {
 
       print('ApiService: Attempting to refresh token...');
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:5005/api/auth/refresh'),
+        Uri.parse('${ApiConstants.baseUrl}/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'requestToken': refreshToken}),
       );

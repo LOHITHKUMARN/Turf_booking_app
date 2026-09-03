@@ -1,13 +1,13 @@
-const User = require('../models/User');
-const RefreshToken = require('../models/RefreshToken');
+const userRepository = require('../repositories/userRepository');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const logger = require('../services/logger');
 
 // Helper to generate access and refresh tokens
 const generateTokens = async (user) => {
+    const userId = String(user._id || user.id);
     const accessToken = jwt.sign(
-        { userId: user._id, role: user.role },
+        { userId, role: user.role },
         process.env.JWT_SECRET,
         { expiresIn: '15m' } // Short-lived access token
     );
@@ -19,13 +19,11 @@ const generateTokens = async (user) => {
     const expiredAt = new Date();
     expiredAt.setDate(expiredAt.getDate() + 7);
 
-    const refreshToken = new RefreshToken({
+    await userRepository.createRefreshToken({
         token: refreshTokenString,
-        user: user._id,
+        userId,
         expiryDate: expiredAt
     });
-
-    await refreshToken.save();
 
     return { accessToken, refreshTokenString };
 };
@@ -37,7 +35,7 @@ const signup = async (req, res) => {
     const { name, email, phone, password, role } = req.body;
 
     try {
-        const userExists = await User.findOne({ $or: [{ email }, { phone }] });
+        const userExists = await userRepository.findByEmailOrPhone(email) || await userRepository.findByEmailOrPhone(phone);
 
         if (userExists) {
             return res.status(400).json({ 
@@ -47,7 +45,7 @@ const signup = async (req, res) => {
             });
         }
 
-        const user = await User.create({
+        const user = await userRepository.createUser({
             name,
             email,
             phone,
@@ -58,7 +56,8 @@ const signup = async (req, res) => {
         if (user) {
             const tokens = await generateTokens(user);
             res.status(201).json({
-                _id: user._id,
+                _id: user._id || user.id,
+                id: user.id || user._id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
@@ -75,6 +74,7 @@ const signup = async (req, res) => {
             });
         }
     } catch (error) {
+        logger.error('Signup error', { error: error.message });
         res.status(500).json({ message: error.message });
     }
 };
@@ -97,22 +97,21 @@ const login = async (req, res) => {
         }
 
         // Find user by email OR phone
-        const user = await User.findOne({
-            $or: [{ email: id.toLowerCase() }, { phone: id }]
-        });
+        const user = await userRepository.findByEmailOrPhone(id);
 
         if (!user) {
             logger.info(`Login failed: User not found for ID [${id}]`);
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        const isMatch = await user.matchPassword(password);
+        const isMatch = await userRepository.matchPassword(password, user.password);
         logger.info(`Login attempt for [${user.email}] | Role: [${user.role}] | Match: [${isMatch}]`);
 
         if (isMatch) {
             const tokens = await generateTokens(user);
             res.json({
-                _id: user._id,
+                _id: user._id || user.id,
+                id: user.id || user._id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -142,16 +141,11 @@ const updateFCMToken = async (req, res) => {
     }
 
     try {
-        const user = await User.findById(req.user._id);
+        const userId = req.user._id || req.user.id;
+        const user = await userRepository.updateFCMToken(userId, token);
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
-        }
-
-        // Add token if it doesn't exist
-        if (!user.fcmTokens.includes(token)) {
-            user.fcmTokens.push(token);
-            await user.save();
         }
 
         res.json({ message: 'FCM token updated successfully' });
@@ -171,22 +165,23 @@ const refreshToken = async (req, res) => {
     }
 
     try {
-        const refreshTokenDoc = await RefreshToken.findOne({ token: requestToken }).populate('user');
+        const refreshTokenDoc = await userRepository.findRefreshToken(requestToken);
 
         if (!refreshTokenDoc) {
             return res.status(403).json({ message: 'Refresh token is not in database!' });
         }
 
-        if (refreshTokenDoc.isExpired()) {
-            await RefreshToken.findByIdAndDelete(refreshTokenDoc._id);
+        if (typeof refreshTokenDoc.isExpired === 'function' ? refreshTokenDoc.isExpired() : (refreshTokenDoc.expiryDate.getTime() <= Date.now())) {
+            await userRepository.deleteRefreshToken(refreshTokenDoc._id || refreshTokenDoc.id);
             return res.status(403).json({
                 message: 'Refresh token was expired. Please make a new signin request',
             });
         }
 
         // Generate new access token
+        const user = refreshTokenDoc.user;
         const newAccessToken = jwt.sign(
-            { userId: refreshTokenDoc.user._id, role: refreshTokenDoc.user.role },
+            { userId: String(user._id || user.id), role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: '15m' }
         );
@@ -201,4 +196,3 @@ const refreshToken = async (req, res) => {
 };
 
 module.exports = { signup, login, updateFCMToken, refreshToken };
-
