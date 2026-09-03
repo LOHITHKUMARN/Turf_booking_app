@@ -1,6 +1,6 @@
 param (
     [Parameter(Mandatory=$false)]
-    [string]$RenderApiUrl = "https://your-turf-api.onrender.com/api"
+    [string]$RenderApiUrl = "https://turf-booking-app-op86.onrender.com/api"
 )
 
 Write-Host "====================================================" -ForegroundColor Cyan
