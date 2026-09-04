@@ -55,11 +55,12 @@ const getTurfSlots = async (req, res) => {
         const { date, groundName } = req.query; // Expecting YYYY-MM-DD
         const turfId = req.params.turfId;
 
-        const cacheKey = `slots:${turfId}:${date}:${groundName || 'all'}`;
+        const targetDate = date || new Date().toISOString().split('T')[0];
+        const cacheKey = `slots:${turfId}:${targetDate}:${groundName || 'all'}`;
         const cached = await getCache(cacheKey);
         if (cached) return res.json(cached);
 
-        const [year, month, day] = date.split('-').map(Number);
+        const [year, month, day] = targetDate.split('-').map(Number);
         const startOfUtcDay = new Date(Date.UTC(year, month - 1, day));
         const endOfUtcDay = new Date(startOfUtcDay);
         endOfUtcDay.setUTCDate(endOfUtcDay.getUTCDate() + 1);
@@ -67,13 +68,11 @@ const getTurfSlots = async (req, res) => {
         const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const dayOfWeek = days[startOfUtcDay.getUTCDay()];
 
-        const slots = await slotRepository.findSlots({ turfId, dayOfWeek, groundName });
+        const cleanGroundName = (groundName && groundName !== 'all') ? groundName : undefined;
+        const slots = await slotRepository.findSlots({ turfId, dayOfWeek, groundName: cleanGroundName });
 
         const bookings = await bookingRepository.findBookingsForDateRange(turfId, startOfUtcDay, endOfUtcDay);
-        const bookedSlotIds = bookings.map(b => String(b.slotId._id || b.slotId.id || b.slotId));
-
-        const isToday = startOfUtcDay.toISOString().split('T')[0] === new Date().toISOString().split('T')[0];
-        const currentTime = new Date();
+        const bookedSlotIds = bookings.map(b => String(b.slotId?._id || b.slotId?.id || b.slotId));
 
         const enrichedSlots = slots.map(slot => {
             const slotDoc = slot._doc || slot;
@@ -82,15 +81,6 @@ const getTurfSlots = async (req, res) => {
                 ...slotDoc,
                 isBooked: bookedSlotIds.includes(slotIdStr)
             };
-        }).filter(slot => {
-            if (!isToday) return true;
-
-            const [hours, minutes] = slot.startTime.split(':').map(Number);
-            const slotTime = new Date();
-            slotTime.setHours(hours, minutes, 0, 0);
-
-            const graceTime = new Date(slotTime.getTime() + 15 * 60000);
-            return graceTime > currentTime;
         });
 
         await setCache(cacheKey, enrichedSlots, 60);

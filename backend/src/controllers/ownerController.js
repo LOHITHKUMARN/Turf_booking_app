@@ -9,6 +9,8 @@ const { prisma } = require('../config/db');
 const { serializeTurf, serializeSlot, serializeBooking, serializeUser, serializePayout, serializeAttendance, serializeAnnouncement } = require('../utils/serializer');
 const bcrypt = require('bcryptjs');
 
+const { deleteCache } = require('../services/redis');
+
 const isPostgres = () => process.env.DB_PROVIDER === 'postgres';
 
 // @desc    Get owner's turfs
@@ -64,19 +66,11 @@ const manageSlots = async (req, res) => {
 
         const savedSlots = [];
         for (const slotData of slots) {
-            const saved = await slotRepository.upsertSlot({
-                turfId,
-                groundName: slotData.groundName || '',
-                sport: slotData.sport,
-                dayOfWeek: slotData.dayOfWeek,
-                startTime: slotData.startTime,
-                endTime: slotData.endTime,
-                price: Number(slotData.price),
-                isBlocked: Boolean(slotData.isBlocked)
-            });
+            const saved = await slotRepository.upsertSlot(turfId, slotData);
             savedSlots.push(saved);
         }
 
+        await deleteCache(`slots:${turfId}:*`);
         res.json(savedSlots);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -346,8 +340,9 @@ const updateTurfSettings = async (req, res) => {
             return res.status(401).json({ message: 'Not authorized' });
         }
 
+        const settingsData = req.body?.settings || req.body;
         const updated = await turfRepository.updateTurf(req.params.id, {
-            settings: req.body
+            settings: settingsData
         });
         res.json(updated);
     } catch (error) {

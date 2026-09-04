@@ -116,15 +116,25 @@ const updateTurf = async (id, data) => {
         }
         if (data.upiId !== undefined) updatePayload.upiId = data.upiId;
         if (data.taxPercentage !== undefined) updatePayload.taxPercentage = Number(data.taxPercentage);
-        if (data.settings) {
-            if (data.settings.minBookingDuration) updatePayload.minBookingDuration = Number(data.settings.minBookingDuration);
-            if (data.settings.advanceBookingLimit) updatePayload.advanceBookingLimit = Number(data.settings.advanceBookingLimit);
-            if (data.settings.bookingCutoffTime) updatePayload.bookingCutoffTime = Number(data.settings.bookingCutoffTime);
-            if (data.settings.gracePeriod) updatePayload.gracePeriod = Number(data.settings.gracePeriod);
-            if (data.settings.maxMembers) updatePayload.maxMembers = Number(data.settings.maxMembers);
-            if (data.settings.upiId !== undefined) updatePayload.upiId = data.settings.upiId;
-            if (data.settings.taxPercentage !== undefined) updatePayload.taxPercentage = Number(data.settings.taxPercentage);
+        
+        const s = data.settings?.settings || data.settings || {};
+        if (s.minBookingDuration !== undefined || data.minBookingDuration !== undefined) {
+            updatePayload.minBookingDuration = Number(s.minBookingDuration ?? data.minBookingDuration);
         }
+        if (s.advanceBookingLimit !== undefined || data.advanceBookingLimit !== undefined) {
+            updatePayload.advanceBookingLimit = Number(s.advanceBookingLimit ?? data.advanceBookingLimit);
+        }
+        if (s.bookingCutoffTime !== undefined || data.bookingCutoffTime !== undefined) {
+            updatePayload.bookingCutoffTime = Number(s.bookingCutoffTime ?? data.bookingCutoffTime);
+        }
+        if (s.gracePeriod !== undefined || data.gracePeriod !== undefined) {
+            updatePayload.gracePeriod = Number(s.gracePeriod ?? data.gracePeriod);
+        }
+        if (s.maxMembers !== undefined || data.maxMembers !== undefined) {
+            updatePayload.maxMembers = Number(s.maxMembers ?? data.maxMembers);
+        }
+        if (s.upiId !== undefined) updatePayload.upiId = s.upiId;
+        if (s.taxPercentage !== undefined) updatePayload.taxPercentage = Number(s.taxPercentage);
 
         const updated = await prisma.turf.update({
             where: { id: String(id) },
@@ -133,7 +143,19 @@ const updateTurf = async (id, data) => {
         return serializeTurf(updated);
     }
 
-    return await TurfMongo.findByIdAndUpdate(id, data, { new: true });
+    const s = data.settings?.settings || data.settings || {};
+    const mongoUpdate = { ...data };
+    if (Object.keys(s).length > 0) {
+        mongoUpdate['settings.minBookingDuration'] = s.minBookingDuration;
+        mongoUpdate['settings.advanceBookingLimit'] = s.advanceBookingLimit;
+        mongoUpdate['settings.bookingCutoffTime'] = s.bookingCutoffTime;
+        mongoUpdate['settings.gracePeriod'] = s.gracePeriod;
+        mongoUpdate['settings.maxMembers'] = s.maxMembers;
+        if (s.upiId !== undefined) mongoUpdate['settings.upiId'] = s.upiId;
+        if (s.taxPercentage !== undefined) mongoUpdate['settings.taxPercentage'] = s.taxPercentage;
+    }
+
+    return await TurfMongo.findByIdAndUpdate(id, mongoUpdate, { new: true });
 };
 
 const updateRating = async (turfId, avgRating, numReviews) => {

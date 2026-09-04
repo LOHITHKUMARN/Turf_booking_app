@@ -10,21 +10,41 @@ const findSlots = async ({ turfId, dayOfWeek, groundName }) => {
             turfId: String(turfId)
         };
         if (dayOfWeek) where.dayOfWeek = dayOfWeek;
-        if (groundName) where.groundName = groundName;
+        if (groundName && groundName !== 'all') where.groundName = groundName;
 
-        const slots = await prisma.slot.findMany({
+        let slots = await prisma.slot.findMany({
             where,
             orderBy: { startTime: 'asc' }
         });
+
+        // Fallback: If groundName was filtered but returned no slots, check with groundName: ''
+        if (slots.length === 0 && groundName && groundName !== 'all') {
+            const fallbackSlots = await prisma.slot.findMany({
+                where: {
+                    turfId: String(turfId),
+                    ...(dayOfWeek ? { dayOfWeek } : {}),
+                    groundName: ''
+                },
+                orderBy: { startTime: 'asc' }
+            });
+            if (fallbackSlots.length > 0) {
+                slots = fallbackSlots;
+            }
+        }
 
         return slots.map(s => serializeSlot(s));
     }
 
     const query = { turfId };
     if (dayOfWeek) query.dayOfWeek = dayOfWeek;
-    if (groundName) query.groundName = groundName;
+    if (groundName && groundName !== 'all') query.groundName = groundName;
 
-    return await SlotMongo.find(query);
+    let slots = await SlotMongo.find(query);
+    if (slots.length === 0 && groundName && groundName !== 'all') {
+        const fallback = await SlotMongo.find({ turfId, ...(dayOfWeek ? { dayOfWeek } : {}), groundName: '' });
+        if (fallback.length > 0) slots = fallback;
+    }
+    return slots;
 };
 
 const findSlotById = async (id) => {
@@ -39,32 +59,53 @@ const findSlotById = async (id) => {
     return await SlotMongo.findById(id);
 };
 
-const upsertSlot = async (turfId, slotData) => {
+const upsertSlot = async (turfIdOrData, maybeSlotData) => {
+    let turfId;
+    let slotData;
+
+    if (maybeSlotData) {
+        turfId = String(turfIdOrData);
+        slotData = maybeSlotData;
+    } else if (typeof turfIdOrData === 'object' && turfIdOrData !== null) {
+        turfId = String(turfIdOrData.turfId);
+        slotData = turfIdOrData;
+    } else {
+        throw new Error('Invalid arguments to upsertSlot');
+    }
+
+    const groundName = (slotData.groundName !== undefined && slotData.groundName !== null) ? String(slotData.groundName).trim() : '';
+    const sport = slotData.sport ? String(slotData.sport).trim() : 'General';
+    const dayOfWeek = slotData.dayOfWeek;
+    const startTime = String(slotData.startTime);
+    const endTime = String(slotData.endTime);
+    const price = Number(slotData.price || 0);
+    const isBlocked = Boolean(slotData.isBlocked);
+
     if (isPostgres()) {
         const slot = await prisma.slot.upsert({
             where: {
                 turfId_groundName_sport_dayOfWeek_startTime: {
-                    turfId: String(turfId),
-                    groundName: slotData.groundName || '',
-                    sport: slotData.sport,
-                    dayOfWeek: slotData.dayOfWeek,
-                    startTime: slotData.startTime
+                    turfId,
+                    groundName,
+                    sport,
+                    dayOfWeek,
+                    startTime
                 }
             },
             update: {
-                endTime: slotData.endTime,
-                price: Number(slotData.price),
-                isBlocked: Boolean(slotData.isBlocked)
+                endTime,
+                price,
+                isBlocked
             },
             create: {
-                turfId: String(turfId),
-                groundName: slotData.groundName || '',
-                sport: slotData.sport,
-                dayOfWeek: slotData.dayOfWeek,
-                startTime: slotData.startTime,
-                endTime: slotData.endTime,
-                price: Number(slotData.price),
-                isBlocked: Boolean(slotData.isBlocked)
+                turfId,
+                groundName,
+                sport,
+                dayOfWeek,
+                startTime,
+                endTime,
+                price,
+                isBlocked
             }
         });
         return serializeSlot(slot);
@@ -73,12 +114,21 @@ const upsertSlot = async (turfId, slotData) => {
     return await SlotMongo.findOneAndUpdate(
         {
             turfId,
-            groundName: slotData.groundName || '',
-            dayOfWeek: slotData.dayOfWeek,
-            startTime: slotData.startTime,
-            sport: slotData.sport
+            groundName,
+            dayOfWeek,
+            startTime,
+            sport
         },
-        slotData,
+        {
+            turfId,
+            groundName,
+            sport,
+            dayOfWeek,
+            startTime,
+            endTime,
+            price,
+            isBlocked
+        },
         { upsert: true, new: true }
     );
 };
