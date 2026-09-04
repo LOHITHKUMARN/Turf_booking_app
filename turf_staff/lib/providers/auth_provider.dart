@@ -18,32 +18,69 @@ class AuthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
 
   Future<void> tryAutoLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey('token')) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('token') && !prefs.containsKey('refreshToken')) return;
 
-    _token = prefs.getString('token');
-    final userData = prefs.getString('userData');
-    
-    if (_token != null && !JwtDecoder.isExpired(_token!)) {
-      if (userData != null) {
-        _user = jsonDecode(userData);
-      } else {
-        _user = JwtDecoder.decode(_token!);
+      _token = prefs.getString('token');
+      bool tokenExpired = _token == null;
+      if (_token != null) {
+        try {
+          tokenExpired = JwtDecoder.isExpired(_token!);
+        } catch (_) {
+          tokenExpired = true;
+        }
       }
 
-      // Initialize Socket
-      SocketService().init(token: _token!, userId: _user?['userId'] ?? _user?['id'] ?? '');
-      
-      // Register FCM Token (Safe wrap)
-      try {
-        await NotificationService().updateServerToken();
-      } catch (e) {
-        debugPrint('FCM Token refresh skipped: $e');
+      if (tokenExpired) {
+        print('Staff AuthProvider: Token expired, attempting refresh...');
+        final refreshed = await _apiService.refreshToken();
+        if (refreshed) {
+          _token = prefs.getString('token');
+        } else {
+          if (!prefs.containsKey('refreshToken')) {
+            _token = null;
+            _user = null;
+            notifyListeners();
+            return;
+          }
+        }
       }
-    } else {
-      _token = null;
-      _user = null;
-      await prefs.clear();
+
+      final userData = prefs.getString('userData');
+      if (_token != null) {
+        if (userData != null) {
+          try {
+            _user = jsonDecode(userData);
+          } catch (e) {
+            debugPrint('Staff error parsing userData: $e');
+          }
+        }
+        
+        if (_user == null) {
+          try {
+            _user = JwtDecoder.decode(_token!);
+          } catch (e) {
+            debugPrint('Staff error decoding token: $e');
+          }
+        }
+
+        // Initialize Socket safely
+        try {
+          SocketService().init(token: _token!, userId: _user?['userId'] ?? _user?['id'] ?? '');
+        } catch (e) {
+          debugPrint('Staff Socket init error: $e');
+        }
+        
+        // Register FCM Token safely
+        try {
+          await NotificationService().updateServerToken();
+        } catch (e) {
+          debugPrint('FCM Token refresh skipped: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Staff tryAutoLogin error: $e');
     }
     notifyListeners();
   }

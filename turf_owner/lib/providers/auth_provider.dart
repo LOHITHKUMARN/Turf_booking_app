@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import '../models/user_model.dart';
 import '../core/services/api_service.dart';
 import '../core/services/socket_service.dart';
@@ -82,22 +83,86 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> tryAutoLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey('token')) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('token') && !prefs.containsKey('refreshToken')) return;
 
-    final userData = prefs.getString('userData');
-    if (userData != null) {
-      _user = User.fromJson(jsonDecode(userData));
-      
-      // Initialize Socket
-      if (_user?.token != null) {
-        SocketService().init(token: _user!.token!, userId: _user!.id ?? '');
-        
-        // Register FCM Token
-        NotificationService().updateServerToken();
+      String? token = prefs.getString('token');
+      bool tokenExpired = token == null;
+      if (token != null) {
+        try {
+          tokenExpired = JwtDecoder.isExpired(token);
+        } catch (_) {
+          tokenExpired = true;
+        }
       }
-      
-      notifyListeners();
+
+      if (tokenExpired) {
+        print('Owner AuthProvider: Token expired, attempting refresh...');
+        final refreshed = await _apiService.refreshToken();
+        if (refreshed) {
+          token = prefs.getString('token');
+        } else {
+          if (!prefs.containsKey('refreshToken')) {
+            _user = null;
+            notifyListeners();
+            return;
+          }
+        }
+      }
+
+      final userData = prefs.getString('userData');
+      if (userData != null) {
+        try {
+          final data = jsonDecode(userData);
+          _user = User.fromJson(data);
+        } catch (e) {
+          debugPrint('Owner error parsing userData: $e');
+        }
+      }
+
+      if (_user == null && token != null) {
+        try {
+          final decoded = JwtDecoder.decode(token);
+          _user = User(
+            id: (decoded['userId'] ?? '').toString(),
+            name: 'Owner',
+            email: '',
+            phone: '',
+            role: (decoded['role'] ?? 'owner').toString(),
+            status: 'active',
+            token: token,
+          );
+        } catch (e) {
+          debugPrint('Owner fallback decoding token: $e');
+        }
+      } else if (_user != null && token != null) {
+        _user = User(
+          id: _user!.id,
+          name: _user!.name,
+          email: _user!.email,
+          phone: _user!.phone,
+          role: _user!.role,
+          status: _user!.status,
+          token: token,
+        );
+      }
+
+      if (_user != null) {
+        try {
+          final activeToken = token ?? _user?.token;
+          if (activeToken != null) {
+            SocketService().init(token: activeToken, userId: _user!.id);
+            NotificationService().updateServerToken();
+          }
+        } catch (e) {
+          debugPrint('Owner Socket/FCM init error: $e');
+        }
+        
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Owner tryAutoLogin error: $e');
     }
   }
 }

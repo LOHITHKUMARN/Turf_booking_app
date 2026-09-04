@@ -18,24 +18,33 @@ class ApiService {
     };
   }
 
-  Future<bool> _refreshToken() async {
+  Future<bool> refreshToken() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final refreshToken = prefs.getString('refreshToken');
-      if (refreshToken == null) return false;
+      final storedRefreshToken = prefs.getString('refreshToken');
+      if (storedRefreshToken == null) return false;
 
       print('ApiService: Attempting to refresh token...');
       final response = await http.post(
         Uri.parse('${ApiConstants.baseUrl}/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'requestToken': refreshToken}),
-      );
+        body: jsonEncode({'requestToken': storedRefreshToken}),
+      ).timeout(const Duration(seconds: 45));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         await prefs.setString('token', data['accessToken']);
+        if (data['refreshToken'] != null) {
+          await prefs.setString('refreshToken', data['refreshToken']);
+        }
         print('ApiService: Token refreshed successfully');
         return true;
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        print('ApiService: Refresh token rejected (${response.statusCode})');
+        await prefs.remove('token');
+        await prefs.remove('refreshToken');
+        await prefs.remove('userData');
+        return false;
       } else {
         print('ApiService: Refresh failed with status ${response.statusCode}');
         return false;
@@ -53,17 +62,17 @@ class ApiService {
       Uri.parse(url),
       headers: headers,
       body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(const Duration(seconds: 30));
     
     if (response.statusCode == 401) {
-      bool refreshed = await _refreshToken();
+      bool refreshed = await refreshToken();
       if (refreshed) {
         headers = await _getHeaders();
         response = await http.post(
           Uri.parse(url),
           headers: headers,
           body: jsonEncode(body),
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 30));
       }
     }
 
@@ -77,16 +86,16 @@ class ApiService {
     http.Response response = await http.get(
       Uri.parse(url),
       headers: headers,
-    ).timeout(const Duration(seconds: 10));
+    ).timeout(const Duration(seconds: 30));
 
     if (response.statusCode == 401) {
-      bool refreshed = await _refreshToken();
+      bool refreshed = await refreshToken();
       if (refreshed) {
         headers = await _getHeaders();
         response = await http.get(
           Uri.parse(url),
           headers: headers,
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 30));
       }
     }
     return response;
@@ -119,17 +128,17 @@ class ApiService {
       Uri.parse(url),
       headers: headers,
       body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(const Duration(seconds: 30));
 
     if (response.statusCode == 401) {
-      bool refreshed = await _refreshToken();
+      bool refreshed = await refreshToken();
       if (refreshed) {
         headers = await _getHeaders();
         response = await http.put(
           Uri.parse(url),
           headers: headers,
           body: jsonEncode(body),
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 30));
       }
     }
 
@@ -144,16 +153,16 @@ class ApiService {
     http.Response response = await http.delete(
       Uri.parse(url),
       headers: headers,
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(const Duration(seconds: 30));
 
     if (response.statusCode == 401) {
-      bool refreshed = await _refreshToken();
+      bool refreshed = await refreshToken();
       if (refreshed) {
         headers = await _getHeaders();
         response = await http.delete(
           Uri.parse(url),
           headers: headers,
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 30));
       }
     }
 

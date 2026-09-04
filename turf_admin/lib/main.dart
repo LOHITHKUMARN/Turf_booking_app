@@ -68,15 +68,32 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  late Future<void> _authFuture;
+
   @override
   void initState() {
     super.initState();
-    Provider.of<AuthProvider>(context, listen: false).tryAutoLogin();
+    _authFuture = Provider.of<AuthProvider>(context, listen: false).tryAutoLogin();
   }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    return authProvider.isAuthenticated ? DashboardScreen() : LoginScreen();
+    return FutureBuilder(
+      future: _authFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        return Consumer<AuthProvider>(
+          builder: (context, auth, _) {
+            return auth.isAuthenticated ? DashboardScreen() : LoginScreen();
+          },
+        );
+      },
+    );
   }
 }

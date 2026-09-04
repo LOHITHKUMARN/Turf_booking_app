@@ -41,7 +41,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()..tryAutoLogin()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TurfProvider()),
         ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
         ChangeNotifierProvider(create: (_) => PayoutProvider()),
@@ -83,12 +83,40 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
   @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late Future<void> _authFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _authFuture = Provider.of<AuthProvider>(context, listen: false).tryAutoLogin();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    return authProvider.isAuthenticated ? HomeScreen() : OwnerLoginScreen();
+    return FutureBuilder(
+      future: _authFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF00A86B)),
+            ),
+          );
+        }
+        return Consumer<AuthProvider>(
+          builder: (context, auth, _) {
+            return auth.isAuthenticated ? HomeScreen() : OwnerLoginScreen();
+          },
+        );
+      },
+    );
   }
 }

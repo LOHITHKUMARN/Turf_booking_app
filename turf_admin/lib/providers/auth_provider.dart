@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import '../models/user_model.dart';
 import '../core/services/api_service.dart';
 import '../core/services/socket_service.dart';
@@ -132,32 +133,92 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> tryAutoLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey('token')) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('token') && !prefs.containsKey('refreshToken')) return;
 
-    final userData = prefs.getString('userData');
-    if (userData != null) {
-      final data = jsonDecode(userData);
-      if (data['role'] == 'admin') {
-        _user = User.fromJson(data);
-        
-        // Initialize Socket
-        SocketService().init(
-          token: prefs.getString('token') ?? '', 
-          userId: _user?.id ?? ''
+      String? token = prefs.getString('token');
+      bool tokenExpired = token == null;
+      if (token != null) {
+        try {
+          tokenExpired = JwtDecoder.isExpired(token);
+        } catch (_) {
+          tokenExpired = true;
+        }
+      }
+
+      if (tokenExpired) {
+        print('Admin AuthProvider: Token expired, attempting refresh...');
+        final refreshed = await _apiService.refreshToken();
+        if (refreshed) {
+          token = prefs.getString('token');
+        } else {
+          // If refresh token is missing or explicitly invalid, exit
+          if (!prefs.containsKey('refreshToken')) {
+            _user = null;
+            notifyListeners();
+            return;
+          }
+        }
+      }
+
+      final userData = prefs.getString('userData');
+      if (userData != null) {
+        try {
+          final data = jsonDecode(userData);
+          _user = User.fromJson(data);
+        } catch (e) {
+          debugPrint('Error parsing userData: $e');
+        }
+      }
+      
+      if (_user == null && token != null) {
+        try {
+          final decoded = JwtDecoder.decode(token);
+          _user = User(
+            id: (decoded['userId'] ?? '').toString(),
+            name: 'Admin',
+            email: '',
+            phone: '',
+            role: (decoded['role'] ?? 'admin').toString(),
+            status: 'active',
+            token: token,
+          );
+        } catch (e) {
+          debugPrint('Error fallback decoding token: $e');
+        }
+      } else if (_user != null && token != null) {
+        _user = User(
+          id: _user!.id,
+          name: _user!.name,
+          email: _user!.email,
+          phone: _user!.phone,
+          role: _user!.role,
+          status: _user!.status,
+          token: token,
         );
+      }
+
+      if (_user != null) {
+        try {
+          SocketService().init(
+            token: token ?? prefs.getString('token') ?? '', 
+            userId: _user!.id
+          );
+        } catch (e) {
+          debugPrint('Admin Socket init error: $e');
+        }
         
-        // Register FCM Token
-        NotificationService().updateServerToken();
+        try {
+          NotificationService().updateServerToken();
+        } catch (e) {
+          debugPrint('Admin FCM init error: $e');
+        }
         
-        notifyListeners();
-      } else {
-        await prefs.remove('token');
-        await prefs.remove('refreshToken');
-        await prefs.remove('userData');
-        _user = null;
         notifyListeners();
       }
+    } catch (e) {
+      debugPrint('Admin tryAutoLogin error: $e');
     }
   }
 }

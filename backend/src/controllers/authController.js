@@ -9,15 +9,15 @@ const generateTokens = async (user) => {
     const accessToken = jwt.sign(
         { userId, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '15m' } // Short-lived access token
+        { expiresIn: '30d' } // Extended access token for persistent mobile sessions
     );
 
     // Generate Refresh Token string
     const refreshTokenString = crypto.randomBytes(40).toString('hex');
     
-    // Set expiry to 7 days
+    // Set expiry to 90 days
     const expiredAt = new Date();
-    expiredAt.setDate(expiredAt.getDate() + 7);
+    expiredAt.setDate(expiredAt.getDate() + 90);
 
     await userRepository.createRefreshToken({
         token: refreshTokenString,
@@ -183,7 +183,7 @@ const refreshToken = async (req, res) => {
         const newAccessToken = jwt.sign(
             { userId: String(user._id || user.id), role: user.role },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: '30d' }
         );
 
         res.status(200).json({

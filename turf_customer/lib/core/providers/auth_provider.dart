@@ -125,30 +125,69 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> tryAutoLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey('token')) return;
-
-    final token = prefs.getString('token')!;
-    if (JwtDecoder.isExpired(token)) {
-      await prefs.remove('token');
-      return;
-    }
-
     try {
-      final decodedToken = JwtDecoder.decode(token);
-      if (decodedToken['role'] == 'customer') {
-          _user = {
-            'userId': decodedToken['userId'],
-            'role': decodedToken['role'],
-            'name': 'User', 
-          };
-          await fetchProfile(); // Fetch full profile to get name, phone, image etc.
-          
-          // Initialize Socket
-          SocketService().init(token: token, userId: _user?['_id'] ?? decodedToken['userId'] ?? '');
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('token') && !prefs.containsKey('refreshToken')) return;
 
-          // Register FCM Token
-          NotificationService().updateServerToken();
+      String? token = prefs.getString('token');
+      bool tokenExpired = token == null;
+      if (token != null) {
+        try {
+          tokenExpired = JwtDecoder.isExpired(token);
+        } catch (_) {
+          tokenExpired = true;
+        }
+      }
+
+      if (tokenExpired) {
+        print('AuthProvider: Token expired, attempting refresh...');
+        final refreshed = await _apiService.refreshToken();
+        if (refreshed) {
+          token = prefs.getString('token');
+        } else {
+          if (!prefs.containsKey('refreshToken')) {
+            _user = null;
+            notifyListeners();
+            return;
+          }
+        }
+      }
+
+      if (token != null) {
+        try {
+          final decodedToken = JwtDecoder.decode(token);
+          final role = (decodedToken['role'] ?? '').toString().toLowerCase();
+          if (role == 'customer') {
+            _user = {
+              'userId': decodedToken['userId'],
+              'role': decodedToken['role'],
+              'name': 'User', 
+            };
+            notifyListeners();
+
+            try {
+              await fetchProfile(); // Fetch full profile to get name, phone, image etc.
+            } catch (e) {
+              print('fetchProfile error during auto-login: $e');
+            }
+            
+            // Initialize Socket safely
+            try {
+              SocketService().init(token: token, userId: _user?['_id'] ?? decodedToken['userId'] ?? '');
+            } catch (e) {
+              debugPrint('Customer Socket init error: $e');
+            }
+
+            // Register FCM Token
+            try {
+              NotificationService().updateServerToken();
+            } catch (e) {
+              debugPrint('Customer FCM init error: $e');
+            }
+          }
+        } catch (e) {
+          print('Auto login decode error: $e');
+        }
       }
     } catch (e) {
       print('Auto login error: $e');

@@ -7,7 +7,6 @@ import 'providers/auth_provider.dart';
 import 'providers/staff_provider.dart';
 import 'providers/tournament_provider.dart';
 import 'features/auth/screens/welcome_screen.dart';
-import 'features/auth/screens/login_screen.dart';
 import 'features/dashboard/screens/staff_dashboard.dart';
 
 void main() async {
