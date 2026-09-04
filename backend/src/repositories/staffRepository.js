@@ -2,9 +2,54 @@ const { prisma } = require('../config/db');
 const AttendanceMongo = require('../models/Attendance');
 const MaintenanceMongo = require('../models/Maintenance');
 const IncidentMongo = require('../models/Incident');
-const { serializeAttendance, serializeMaintenance, serializeIncident } = require('../utils/serializer');
+const BookingMongo = require('../models/Booking');
+const AnnouncementMongo = require('../models/Announcement');
+const {
+    serializeAttendance,
+    serializeMaintenance,
+    serializeIncident,
+    serializeBooking,
+    serializeAnnouncement
+} = require('../utils/serializer');
 
 const isPostgres = () => process.env.DB_PROVIDER === 'postgres';
+
+const findActiveAttendance = async (userId) => {
+    if (isPostgres()) {
+        const att = await prisma.attendance.findFirst({
+            where: {
+                userId: String(userId),
+                clockOut: null
+            },
+            orderBy: { clockIn: 'desc' }
+        });
+        return att ? serializeAttendance(att) : null;
+    }
+
+    return await AttendanceMongo.findOne({
+        userId,
+        clockOut: null
+    }).sort({ clockIn: -1 });
+};
+
+const getTodayShiftCount = async (userId) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (isPostgres()) {
+        return await prisma.attendance.count({
+            where: {
+                userId: String(userId),
+                clockIn: { gte: today }
+            }
+        });
+    }
+
+    return await AttendanceMongo.countDocuments({
+        userId,
+        clockIn: { $gte: today }
+    });
+};
 
 const clockIn = async ({ userId, turfId, groundName }) => {
     if (isPostgres()) {
@@ -56,6 +101,86 @@ const clockOut = async (attendanceId) => {
     return await att.save();
 };
 
+const findAssignedBookings = async (turfId) => {
+    if (isPostgres()) {
+        const bookings = await prisma.booking.findMany({
+            where: {
+                turfId: String(turfId),
+                bookingStatus: { not: 'cancelled' }
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, email: true } },
+                slot: true,
+                turf: true
+            },
+            orderBy: { bookingDate: 'asc' }
+        });
+        return bookings.map(serializeBooking);
+    }
+
+    return await BookingMongo.find({
+        turfId,
+        bookingStatus: { $ne: 'cancelled' }
+    })
+        .populate('userId', 'name phone')
+        .populate('slotId')
+        .sort({ bookingDate: 1 });
+};
+
+const getStaffStats = async (turfId) => {
+    if (isPostgres()) {
+        const handledBookings = await prisma.booking.count({
+            where: {
+                turfId: String(turfId),
+                bookingStatus: { in: ['checked_in', 'completed'] }
+            }
+        });
+
+        const resolvedIssues = await prisma.maintenance.count({
+            where: {
+                turfId: String(turfId),
+                status: 'Resolved'
+            }
+        });
+
+        return {
+            handledBookings,
+            resolvedIssues,
+            feedbackScore: 4.8
+        };
+    }
+
+    const handledBookings = await BookingMongo.countDocuments({
+        turfId,
+        bookingStatus: { $in: ['checked-in', 'completed'] }
+    });
+
+    const resolvedIssues = await MaintenanceMongo.countDocuments({
+        turfId,
+        status: 'Resolved'
+    });
+
+    return {
+        handledBookings,
+        resolvedIssues,
+        feedbackScore: 4.8
+    };
+};
+
+const findAnnouncementsByTurf = async (turfId) => {
+    if (isPostgres()) {
+        const announcements = await prisma.announcement.findMany({
+            where: { turfId: String(turfId) },
+            orderBy: { createdAt: 'desc' }
+        });
+        return announcements.map(serializeAnnouncement);
+    }
+
+    return await AnnouncementMongo.find({
+        turfId
+    }).sort({ createdAt: -1 });
+};
+
 const reportMaintenance = async (data) => {
     if (isPostgres()) {
         const maint = await prisma.maintenance.create({
@@ -94,8 +219,13 @@ const reportIncident = async (data) => {
 };
 
 module.exports = {
+    findActiveAttendance,
+    getTodayShiftCount,
     clockIn,
     clockOut,
+    findAssignedBookings,
+    getStaffStats,
+    findAnnouncementsByTurf,
     reportMaintenance,
     reportIncident,
     isPostgres

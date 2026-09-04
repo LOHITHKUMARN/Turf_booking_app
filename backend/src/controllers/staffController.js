@@ -1,48 +1,48 @@
-const User = require('../models/User');
-const Booking = require('../models/Booking');
-const Turf = require('../models/Turf');
-const Slot = require('../models/Slot');
-const Maintenance = require('../models/Maintenance');
-const Attendance = require('../models/Attendance');
-const Incident = require('../models/Incident');
+const userRepository = require('../repositories/userRepository');
+const staffRepository = require('../repositories/staffRepository');
+const turfRepository = require('../repositories/turfRepository');
+const slotRepository = require('../repositories/slotRepository');
+const bookingRepository = require('../repositories/bookingRepository');
 const { emitToTurf } = require('../services/socket');
-const Announcement = require('../models/Announcement');
 const { sendToUser } = require('../services/notificationService');
+const { prisma } = require('../config/db');
+const { serializeBooking, serializeSlot } = require('../utils/serializer');
+const logger = require('../services/logger');
+
+// Helper to extract string Turf ID from user model
+const getStaffTurfId = (staff) => {
+    if (!staff || !staff.assignedTurfId) return null;
+    if (typeof staff.assignedTurfId === 'object') {
+        return staff.assignedTurfId._id || staff.assignedTurfId.id || null;
+    }
+    return String(staff.assignedTurfId);
+};
 
 // @desc    Get bookings for assigned turf
 // @route   GET /api/staff/bookings
 // @access  Private/Staff
 const getAssignedBookings = async (req, res) => {
     try {
-        const staff = await User.findById(req.user._id);
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
         if (!staff) {
-            console.log('Staff user not found:', req.user._id);
+            console.log('Staff user not found:', userId);
             return res.status(404).json({ message: 'Staff user not found' });
         }
 
-        if (!staff.assignedTurfId) {
+        const turfId = getStaffTurfId(staff);
+        if (!turfId) {
             console.log('Staff user has no assigned turf:', staff.email);
             return res.json([]);
         }
 
-        console.log(`Fetching bookings for staff: ${staff.email}, TurfID: ${staff.assignedTurfId}`);
+        console.log(`Fetching bookings for staff: ${staff.email}, TurfID: ${turfId}`);
+        const bookings = await staffRepository.findAssignedBookings(turfId);
 
-        // Fetch bookings for the assigned turf
-        const bookings = await Booking.find({
-            turfId: staff.assignedTurfId,
-            bookingStatus: { $ne: 'cancelled' }
-        })
-            .populate('userId', 'name phone')
-            .populate('slotId')
-            .sort({ bookingDate: 1 });
-
-        console.log(`[STAFF] Found ${bookings.length} bookings for turf ${staff.assignedTurfId}`);
-        if (bookings.length > 0) {
-            console.log(`[STAFF] Latest booking date: ${bookings[0].bookingDate.toISOString()}`);
-        }
-
+        console.log(`[STAFF] Found ${bookings.length} bookings for turf ${turfId}`);
         res.json(bookings);
     } catch (error) {
+        logger.error('getAssignedBookings error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -52,34 +52,40 @@ const getAssignedBookings = async (req, res) => {
 // @access  Private/Staff
 const verifyBooking = async (req, res) => {
     try {
-        const booking = await Booking.findById(req.params.bookingId).populate('turfId');
+        const bookingId = req.params.bookingId;
+        const booking = await bookingRepository.findBookingById(bookingId);
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Mark as arrived/verified and record timestamp
-        booking.bookingStatus = 'checked-in';
-        booking.checkInTime = new Date();
-        await booking.save();
+        const updated = await bookingRepository.updateBooking(bookingId, {
+            bookingStatus: 'checked-in',
+            checkInTime: new Date()
+        });
 
-        // Real-time Event
-        emitToTurf(booking.turfId._id.toString(), 'bookingUpdated', {
-            bookingId: booking._id,
+        const turfIdStr = String(booking.turfId?._id || booking.turfId?.id || booking.turfId);
+        emitToTurf(turfIdStr, 'bookingUpdated', {
+            bookingId: booking._id || booking.id,
             status: 'checked-in'
         });
 
         // Notify Customer
-        const customer = await User.findById(booking.userId);
-        if (customer) {
-            await sendToUser(customer, {
-                title: 'Check-in Successful!',
-                body: `You have successfully checked in at ${booking.turfId.name}. Enjoy your game!`,
-                data: { bookingId: booking._id.toString(), type: 'check_in' }
-            });
+        const customerId = booking.userId?._id || booking.userId?.id || booking.userId;
+        if (customerId) {
+            const customer = await userRepository.findById(customerId);
+            if (customer) {
+                const turfName = booking.turfId?.name || 'the turf';
+                await sendToUser(customer, {
+                    title: 'Check-in Successful!',
+                    body: `You have successfully checked in at ${turfName}. Enjoy your game!`,
+                    data: { bookingId: String(booking._id || booking.id), type: 'check_in' }
+                });
+            }
         }
 
-        res.json({ message: 'Booking verified successfully', booking });
+        res.json({ message: 'Booking verified successfully', booking: updated });
     } catch (error) {
+        logger.error('verifyBooking error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -89,35 +95,41 @@ const verifyBooking = async (req, res) => {
 // @access  Private/Staff
 const updateStatus = async (req, res) => {
     const { status } = req.body;
+    const bookingId = req.params.bookingId;
     try {
-        const booking = await Booking.findById(req.params.bookingId);
+        const booking = await bookingRepository.findBookingById(bookingId);
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        booking.bookingStatus = status; // 'completed', 'no-show'
-        await booking.save();
+        const updated = await bookingRepository.updateBooking(bookingId, {
+            bookingStatus: status
+        });
 
-        // Real-time Event
-        emitToTurf(booking.turfId.toString(), 'bookingUpdated', {
-            bookingId: booking._id,
+        const turfIdStr = String(booking.turfId?._id || booking.turfId?.id || booking.turfId);
+        emitToTurf(turfIdStr, 'bookingUpdated', {
+            bookingId: booking._id || booking.id,
             status: status
         });
 
         // Notify Customer if completed
         if (status === 'completed') {
-            const customer = await User.findById(booking.userId);
-            if (customer) {
-                await sendToUser(customer, {
-                    title: 'Game Completed!',
-                    body: `Hope you had a great time! Don't forget to leave a review.`,
-                    data: { bookingId: booking._id.toString(), type: 'booking_completed' }
-                });
+            const customerId = booking.userId?._id || booking.userId?.id || booking.userId;
+            if (customerId) {
+                const customer = await userRepository.findById(customerId);
+                if (customer) {
+                    await sendToUser(customer, {
+                        title: 'Game Completed!',
+                        body: `Hope you had a great time! Don't forget to leave a review.`,
+                        data: { bookingId: String(booking._id || booking.id), type: 'booking_completed' }
+                    });
+                }
             }
         }
 
-        res.json({ message: `Booking status updated to ${status}`, booking });
+        res.json({ message: `Booking status updated to ${status}`, booking: updated });
     } catch (error) {
+        logger.error('updateStatus error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -127,24 +139,26 @@ const updateStatus = async (req, res) => {
 // @access  Private/Staff
 const reportIssue = async (req, res) => {
     const { turfId, category, description, images } = req.body;
+    const reporterId = req.user._id || req.user.id;
     try {
-        const maintenance = await Maintenance.create({
+        const maintenance = await staffRepository.reportMaintenance({
             turfId,
-            reporterId: req.user._id,
+            reporterId,
             category,
             description,
             images: images || []
         });
 
         // Notify Owner
-        const turf = await Turf.findById(turfId);
+        const turf = await turfRepository.findTurfById(turfId);
         if (turf) {
-            const owner = await User.findById(turf.ownerId);
+            const ownerId = turf.ownerId?._id || turf.ownerId?.id || turf.ownerId;
+            const owner = await userRepository.findById(ownerId);
             if (owner) {
                 await sendToUser(owner, {
                     title: 'New Maintenance Issue!',
                     body: `A new ${category} issue has been reported for ${turf.name}.`,
-                    data: { turfId: turfId.toString(), type: 'maintenance_report' }
+                    data: { turfId: String(turfId), type: 'maintenance_report' }
                 });
             }
         }
@@ -154,6 +168,7 @@ const reportIssue = async (req, res) => {
             maintenance
         });
     } catch (error) {
+        logger.error('reportIssue error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -163,14 +178,17 @@ const reportIssue = async (req, res) => {
 // @access  Private/Staff
 const getTurfSlots = async (req, res) => {
     try {
-        const staff = await User.findById(req.user._id);
-        if (!staff.assignedTurfId) {
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
+        const turfId = getStaffTurfId(staff);
+        if (!turfId) {
             return res.status(400).json({ message: 'No turf assigned' });
         }
 
-        const slots = await Slot.find({ turfId: staff.assignedTurfId });
+        const slots = await slotRepository.findSlots({ turfId });
         res.json(slots);
     } catch (error) {
+        logger.error('getTurfSlots error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -180,7 +198,25 @@ const getTurfSlots = async (req, res) => {
 // @access  Private/Staff
 const toggleSlotBlock = async (req, res) => {
     try {
-        const slot = await Slot.findById(req.params.slotId);
+        const slotId = req.params.slotId;
+        if (staffRepository.isPostgres()) {
+            const slot = await prisma.slot.findUnique({
+                where: { id: String(slotId) }
+            });
+            if (!slot) {
+                return res.status(404).json({ message: 'Slot not found' });
+            }
+
+            const updated = await prisma.slot.update({
+                where: { id: String(slotId) },
+                data: { isBlocked: !slot.isBlocked }
+            });
+            const serialized = serializeSlot(updated);
+            return res.json({ message: `Slot ${serialized.isBlocked ? 'blocked' : 'unblocked'} successfully`, slot: serialized });
+        }
+
+        const SlotMongo = require('../models/Slot');
+        const slot = await SlotMongo.findById(slotId);
         if (!slot) {
             return res.status(404).json({ message: 'Slot not found' });
         }
@@ -190,6 +226,7 @@ const toggleSlotBlock = async (req, res) => {
 
         res.json({ message: `Slot ${slot.isBlocked ? 'blocked' : 'unblocked'} successfully`, slot });
     } catch (error) {
+        logger.error('toggleSlotBlock error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -200,23 +237,60 @@ const toggleSlotBlock = async (req, res) => {
 const createWalkInBooking = async (req, res) => {
     const { slotId, sport, totalAmount } = req.body;
     try {
-        const staff = await User.findById(req.user._id);
-        if (!staff.assignedTurfId) {
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
+        const turfId = getStaffTurfId(staff);
+        if (!turfId) {
             return res.status(400).json({ message: 'No turf assigned' });
         }
 
-        const slot = await Slot.findById(slotId);
+        const slot = await slotRepository.findSlotById(slotId);
         if (!slot || slot.isBlocked) {
             return res.status(400).json({ message: 'Slot is not available' });
         }
 
-        // Check if already booked for today
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        // Standardize walk-in date to UTC midnight
+        const now = new Date();
+        const startOfUtcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const endOfUtcToday = new Date(startOfUtcToday);
+        endOfUtcToday.setUTCDate(endOfUtcToday.getUTCDate() + 1);
 
-        const existingBooking = await Booking.findOne({
+        if (staffRepository.isPostgres()) {
+            const existingBooking = await prisma.booking.findFirst({
+                where: {
+                    slotId: String(slotId),
+                    bookingDate: { gte: startOfUtcToday, lt: endOfUtcToday },
+                    bookingStatus: { not: 'cancelled' }
+                }
+            });
+
+            if (existingBooking) {
+                return res.status(400).json({ message: 'Slot already booked for today' });
+            }
+
+            const booking = await prisma.booking.create({
+                data: {
+                    userId: null,
+                    turfId: String(turfId),
+                    slotId: String(slotId),
+                    groundName: slot.groundName || staff.assignedGround || '',
+                    bookingDate: startOfUtcToday,
+                    totalAmount: Number(totalAmount),
+                    paymentStatus: 'paid',
+                    bookingStatus: 'checked_in',
+                    paymentMethod: 'cash',
+                    checkInTime: new Date()
+                },
+                include: { turf: true, slot: true }
+            });
+
+            return res.status(201).json(serializeBooking(booking));
+        }
+
+        const BookingMongo = require('../models/Booking');
+        const existingBooking = await BookingMongo.findOne({
             slotId,
-            bookingDate: { $gte: today },
+            bookingDate: { $gte: startOfUtcToday },
             bookingStatus: { $ne: 'cancelled' }
         });
 
@@ -224,23 +298,21 @@ const createWalkInBooking = async (req, res) => {
             return res.status(400).json({ message: 'Slot already booked for today' });
         }
 
-        // Standardize walk-in date to UTC midnight
-        const now = new Date();
-        const startOfUtcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-
-        const booking = await Booking.create({
+        const booking = await BookingMongo.create({
             userId: null,
-            turfId: staff.assignedTurfId,
+            turfId,
             slotId,
             bookingDate: startOfUtcToday,
             totalAmount,
             paymentStatus: 'paid',
             bookingStatus: 'checked-in',
-            paymentMethod: 'cash'
+            paymentMethod: 'cash',
+            checkInTime: new Date()
         });
 
         res.status(201).json(booking);
     } catch (error) {
+        logger.error('createWalkInBooking error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -251,27 +323,32 @@ const createWalkInBooking = async (req, res) => {
 const updateOperationalStatus = async (req, res) => {
     const { status } = req.body;
     try {
-        const staff = await User.findById(req.user._id);
-        if (!staff.assignedTurfId) {
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
+        const turfId = getStaffTurfId(staff);
+        if (!turfId) {
             return res.status(400).json({ message: 'No turf assigned' });
         }
 
-        const turf = await Turf.findById(staff.assignedTurfId);
-        turf.operationalStatus = status;
-        await turf.save();
+        await turfRepository.updateTurf(turfId, { operationalStatus: status });
 
         // Notify Owner
-        const owner = await User.findById(turf.ownerId);
-        if (owner) {
-            await sendToUser(owner, {
-                title: 'Turf Status Change',
-                body: `${turf.name} status updated to: ${status}`,
-                data: { turfId: turf._id.toString(), type: 'operational_status' }
-            });
+        const turf = await turfRepository.findTurfById(turfId);
+        if (turf) {
+            const ownerId = turf.ownerId?._id || turf.ownerId?.id || turf.ownerId;
+            const owner = await userRepository.findById(ownerId);
+            if (owner) {
+                await sendToUser(owner, {
+                    title: 'Turf Status Change',
+                    body: `${turf.name} status updated to: ${status}`,
+                    data: { turfId: String(turfId), type: 'operational_status' }
+                });
+            }
         }
 
         res.json({ message: `Turf status updated to ${status}`, operationalStatus: status });
     } catch (error) {
+        logger.error('updateOperationalStatus error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -282,16 +359,15 @@ const updateOperationalStatus = async (req, res) => {
 const updateBookingNotes = async (req, res) => {
     const { notes } = req.body;
     try {
-        const booking = await Booking.findById(req.params.bookingId);
+        const bookingId = req.params.bookingId;
+        const booking = await bookingRepository.updateBooking(bookingId, { staffNotes: notes || '' });
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        booking.staffNotes = notes;
-        await booking.save();
-
         res.json({ message: 'Notes updated', booking });
     } catch (error) {
+        logger.error('updateBookingNotes error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -301,43 +377,33 @@ const updateBookingNotes = async (req, res) => {
 // @access  Private/Staff
 const clockIn = async (req, res) => {
     try {
-        console.log(`Clock-in attempt for user: ${req.user._id}`);
-        const staff = await User.findById(req.user._id);
-        if (!staff || !staff.assignedTurfId) {
+        const userId = req.user._id || req.user.id;
+        console.log(`Clock-in attempt for user: ${userId}`);
+        const staff = await userRepository.findById(userId);
+        const turfId = getStaffTurfId(staff);
+        if (!staff || !turfId) {
             console.log('Clock-in failed: No turf assigned');
             return res.status(400).json({ message: 'No turf assigned' });
         }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         // Count shifts for today
-        const shiftCount = await Attendance.countDocuments({
-            userId: req.user._id,
-            clockIn: { $gte: today }
-        });
-
+        const shiftCount = await staffRepository.getTodayShiftCount(userId);
         if (shiftCount >= 3) {
             console.log('Clock-in failed: Max shifts reached');
             return res.status(400).json({ message: 'Max 3 shifts per day allowed' });
         }
 
         // Only block if there's an ACTIVE clock-in (not yet clocked out)
-        const activeAttendance = await Attendance.findOne({
-            userId: req.user._id,
-            clockOut: null
-        }).sort({ clockIn: -1 });
-
+        const activeAttendance = await staffRepository.findActiveAttendance(userId);
         if (activeAttendance) {
             console.log('Clock-in failed: Already active');
             return res.status(400).json({ message: 'Already clocked in' });
         }
 
-        const attendance = await Attendance.create({
-            userId: req.user._id,
-            turfId: staff.assignedTurfId,
-            groundName: staff.assignedGround || '',
-            clockIn: new Date()
+        const attendance = await staffRepository.clockIn({
+            userId,
+            turfId,
+            groundName: staff.assignedGround || ''
         });
 
         console.log('Clock-in successful');
@@ -353,28 +419,20 @@ const clockIn = async (req, res) => {
 // @access  Private/Staff
 const clockOut = async (req, res) => {
     try {
-        console.log(`Clock-out attempt for user: ${req.user._id}`);
-        // Find the most recent active clock-in (regardless of date)
-        const attendance = await Attendance.findOne({
-            userId: req.user._id,
-            clockOut: null
-        }).sort({ clockIn: -1 });
+        const userId = req.user._id || req.user.id;
+        console.log(`Clock-out attempt for user: ${userId}`);
 
+        const attendance = await staffRepository.findActiveAttendance(userId);
         if (!attendance) {
             console.log('Clock-out failed: No active session');
             return res.status(400).json({ message: 'No active clock-in found' });
         }
 
-        attendance.clockOut = new Date();
-
-        // Calculate work hours
-        const diff = attendance.clockOut - attendance.clockIn;
-        attendance.workHours = (diff / (1000 * 60 * 60)).toFixed(2);
-
-        await attendance.save();
+        const attendanceId = attendance._id || attendance.id;
+        const updated = await staffRepository.clockOut(attendanceId);
 
         console.log('Clock-out successful');
-        res.json(attendance);
+        res.json(updated);
     } catch (error) {
         console.error('Clock-out error:', error.message);
         res.status(500).json({ message: error.message });
@@ -386,14 +444,10 @@ const clockOut = async (req, res) => {
 // @access  Private/Staff
 const getActiveAttendance = async (req, res) => {
     try {
-        // Find most recent session that hasn't been clocked out
-        const attendance = await Attendance.findOne({
-            userId: req.user._id,
-            clockOut: null
-        }).sort({ clockIn: -1 });
-
+        const userId = req.user._id || req.user.id;
+        const attendance = await staffRepository.findActiveAttendance(userId);
         if (attendance) {
-            console.log(`Active session found for user ${req.user._id}`);
+            console.log(`Active session found for user ${userId}`);
         }
         res.json(attendance);
     } catch (error) {
@@ -407,28 +461,21 @@ const getActiveAttendance = async (req, res) => {
 // @access  Private/Staff
 const getProductivityStats = async (req, res) => {
     try {
-        const staff = await User.findById(req.user._id);
-        const turfId = staff.assignedTurfId;
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
+        const turfId = getStaffTurfId(staff);
+        if (!turfId) {
+            return res.json({
+                handledBookings: 0,
+                resolvedIssues: 0,
+                feedbackScore: 4.8
+            });
+        }
 
-        const handledBookings = await Booking.countDocuments({
-            turfId,
-            bookingStatus: { $in: ['checked-in', 'completed'] }
-        });
-
-        const resolvedIssues = await Maintenance.countDocuments({
-            turfId,
-            status: 'Resolved'
-        });
-
-        // Mock feedback score for now
-        const feedbackScore = 4.8;
-
-        res.json({
-            handledBookings,
-            resolvedIssues,
-            feedbackScore
-        });
+        const stats = await staffRepository.getStaffStats(turfId);
+        res.json(stats);
     } catch (error) {
+        logger.error('getProductivityStats error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -438,10 +485,11 @@ const getProductivityStats = async (req, res) => {
 // @access  Private/Staff
 const reportIncident = async (req, res) => {
     const { turfId, type, severity, description, images } = req.body;
+    const reporterId = req.user._id || req.user.id;
     try {
-        const incident = await Incident.create({
+        const incident = await staffRepository.reportIncident({
             turfId,
-            reporterId: req.user._id,
+            reporterId,
             type,
             severity,
             description,
@@ -449,20 +497,22 @@ const reportIncident = async (req, res) => {
         });
 
         // Notify Owner
-        const turf = await Turf.findById(turfId);
+        const turf = await turfRepository.findTurfById(turfId);
         if (turf) {
-            const owner = await User.findById(turf.ownerId);
+            const ownerId = turf.ownerId?._id || turf.ownerId?.id || turf.ownerId;
+            const owner = await userRepository.findById(ownerId);
             if (owner) {
                 await sendToUser(owner, {
                     title: 'EMERGENCY: Safety Incident!',
-                    body: `A ${severity} severity incident (${type}) was reported at ${turf.name}.`,
-                    data: { turfId: turfId.toString(), type: 'safety_incident' }
+                    body: `A ${severity || 'Low'} severity incident (${type}) was reported at ${turf.name}.`,
+                    data: { turfId: String(turfId), type: 'safety_incident' }
                 });
             }
         }
 
         res.status(201).json({ message: 'Incident reported successfully', incident });
     } catch (error) {
+        logger.error('reportIncident error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -472,13 +522,17 @@ const reportIncident = async (req, res) => {
 // @access  Private/Staff
 const getAnnouncements = async (req, res) => {
     try {
-        const staff = await User.findById(req.user._id);
-        const announcements = await Announcement.find({
-            turfId: staff.assignedTurfId
-        }).sort({ createdAt: -1 });
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
+        const turfId = getStaffTurfId(staff);
+        if (!turfId) {
+            return res.json([]);
+        }
 
+        const announcements = await staffRepository.findAnnouncementsByTurf(turfId);
         res.json(announcements);
     } catch (error) {
+        logger.error('getAnnouncements error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -488,8 +542,30 @@ const getAnnouncements = async (req, res) => {
 // @access  Private/Staff
 const addExtraCharge = async (req, res) => {
     const { type, amount, isPaid } = req.body;
+    const bookingId = req.params.bookingId;
     try {
-        const booking = await Booking.findById(req.params.bookingId);
+        if (staffRepository.isPostgres()) {
+            const booking = await prisma.booking.findUnique({
+                where: { id: String(bookingId) }
+            });
+            if (!booking) {
+                return res.status(404).json({ message: 'Booking not found' });
+            }
+
+            const currentCharges = Array.isArray(booking.extraCharges) ? booking.extraCharges : [];
+            const updatedCharges = [...currentCharges, { type, amount: Number(amount), isPaid: isPaid || false }];
+
+            const updated = await prisma.booking.update({
+                where: { id: String(bookingId) },
+                data: { extraCharges: updatedCharges },
+                include: { turf: true, slot: true, user: true }
+            });
+
+            return res.json({ message: 'Extra charge added', booking: serializeBooking(updated) });
+        }
+
+        const BookingMongo = require('../models/Booking');
+        const booking = await BookingMongo.findById(bookingId);
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
@@ -499,6 +575,7 @@ const addExtraCharge = async (req, res) => {
 
         res.json({ message: 'Extra charge added', booking });
     } catch (error) {
+        logger.error('addExtraCharge error:', error);
         res.status(500).json({ message: error.message });
     }
 };

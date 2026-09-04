@@ -3,6 +3,10 @@ const TournamentTeam = require('../models/TournamentTeam');
 const TournamentMatch = require('../models/TournamentMatch');
 const Turf = require('../models/Turf');
 const User = require('../models/User');
+const userRepository = require('../repositories/userRepository');
+const tournamentRepository = require('../repositories/tournamentRepository');
+const { prisma } = require('../config/db');
+const { serializeMatch } = require('../utils/serializer');
 const { sendToUser, sendToRole } = require('../services/notificationService');
 const { emitToRole } = require('../services/socket');
 const logger = require('../services/logger');
@@ -146,17 +150,35 @@ exports.updateTeamStatus = async (req, res) => {
 
 exports.getStaffMatches = async (req, res) => {
     try {
-        const staff = await User.findById(req.user._id);
-        if (!staff || !staff.assignedTurfId) {
-            logger.info(`Staff user ${req.user._id} has no assigned turf`);
+        const userId = req.user._id || req.user.id;
+        const staff = await userRepository.findById(userId);
+        const turfId = staff?.assignedTurfId ? (staff.assignedTurfId._id || staff.assignedTurfId.id || staff.assignedTurfId) : null;
+        if (!staff || !turfId) {
+            logger.info(`Staff user ${userId} has no assigned turf`);
             return res.json([]);
         }
 
+        if (tournamentRepository.isPostgres()) {
+            const matches = await prisma.tournamentMatch.findMany({
+                where: {
+                    tournament: { turfId: String(turfId) },
+                    status: { in: ['scheduled', 'live'] }
+                },
+                include: {
+                    team1: true,
+                    team2: true,
+                    tournament: true
+                }
+            });
+            logger.info(`Found ${matches.length} matches for staff`);
+            return res.json(matches.map(serializeMatch));
+        }
+
         // Find tournaments for this turf
-        const tournaments = await Tournament.find({ turfId: staff.assignedTurfId });
+        const tournaments = await Tournament.find({ turfId: turfId });
         const tournamentIds = tournaments.map(t => t._id);
 
-        logger.info(`Fetching staff matches for turf: ${staff.assignedTurfId}, Tournaments: ${tournamentIds.length}`);
+        logger.info(`Fetching staff matches for turf: ${turfId}, Tournaments: ${tournamentIds.length}`);
 
         const matches = await TournamentMatch.find({
             tournamentId: { $in: tournamentIds },
@@ -178,6 +200,23 @@ exports.updateMatchScore = async (req, res) => {
     try {
         const { matchId } = req.params;
         const { score1, score2, winnerId, status } = req.body;
+        const staffId = req.user._id || req.user.id;
+
+        if (tournamentRepository.isPostgres()) {
+            const updated = await prisma.tournamentMatch.update({
+                where: { id: String(matchId) },
+                data: {
+                    score1: Number(score1),
+                    score2: Number(score2),
+                    winnerId: winnerId ? String(winnerId) : null,
+                    status: status || 'completed',
+                    isVerified: true,
+                    staffId: String(staffId)
+                },
+                include: { team1: true, team2: true, winner: true, staff: true }
+            });
+            return res.json({ message: 'Match score updated and verified', match: serializeMatch(updated) });
+        }
 
         const match = await TournamentMatch.findByIdAndUpdate(
             matchId,
