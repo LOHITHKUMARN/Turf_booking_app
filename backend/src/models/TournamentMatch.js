@@ -2,20 +2,20 @@ const mongoose = require('mongoose');
 
 const tournamentMatchSchema = new mongoose.Schema({
     tournamentId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'Tournament',
         required: true
     },
     team1Id: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'TournamentTeam'
     },
     team2Id: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'TournamentTeam'
     },
     winnerId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'TournamentTeam'
     },
     score1: {
@@ -42,7 +42,7 @@ const tournamentMatchSchema = new mongoose.Schema({
         default: ''
     },
     staffId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'User'
     },
     isVerified: {

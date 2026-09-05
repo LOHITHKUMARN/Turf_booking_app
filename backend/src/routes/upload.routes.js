@@ -13,14 +13,31 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'];
+
+const MIME_MAP = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif'
+};
+
 // Memory storage to handle file buffer before uploading to Supabase Storage
 const upload = multer({
     storage: multer.memoryStorage(),
     fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        const isImageMime = file.mimetype && file.mimetype.startsWith('image/');
+        const isImageExt = ALLOWED_IMAGE_EXTENSIONS.includes(ext);
+
+        if (isImageMime || isImageExt) {
             cb(null, true);
         } else {
-            cb(new Error('Only images are allowed'), false);
+            cb(new Error('Only images are allowed (jpg, jpeg, png, webp, gif, etc.)'), false);
         }
     },
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
@@ -29,14 +46,29 @@ const upload = multer({
 // @desc    Upload an image (Supabase Storage with local disk fallback)
 // @route   POST /api/upload
 // @access  Private
-router.post('/', protect, upload.single('image'), async (req, res) => {
+router.post('/', protect, (req, res, next) => {
+    upload.single('image')(req, res, (err) => {
+        if (err) {
+            logger.warn('Image upload validation error:', { error: err.message });
+            return res.status(400).json({ message: err.message || 'Invalid image file' });
+        }
+        next();
+    });
+}, async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ message: 'No file uploaded' });
         }
 
+        const ext = path.extname(req.file.originalname || '').toLowerCase();
         const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
         const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${sanitizedName}`;
+
+        // Infer correct MIME type if client passed generic application/octet-stream
+        let contentType = req.file.mimetype;
+        if (!contentType || contentType === 'application/octet-stream') {
+            contentType = MIME_MAP[ext] || 'image/jpeg';
+        }
 
         // 1. Try Supabase Storage (Global CDN)
         if (supabase) {
@@ -45,7 +77,7 @@ router.post('/', protect, upload.single('image'), async (req, res) => {
                 const { data, error } = await supabase.storage
                     .from(bucketName)
                     .upload(fileName, req.file.buffer, {
-                        contentType: req.file.mimetype,
+                        contentType: contentType,
                         upsert: true
                     });
 

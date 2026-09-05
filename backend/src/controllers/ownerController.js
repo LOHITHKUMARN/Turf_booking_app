@@ -299,12 +299,23 @@ const getOwnerStats = async (req, res) => {
 const getStaffAttendance = async (req, res) => {
     try {
         const ownerId = req.user._id || req.user.id;
+        const { staffId, userId, turfId } = req.query;
+        const targetStaffId = staffId || userId;
+
         if (isPostgres()) {
             const turfs = await prisma.turf.findMany({ where: { ownerId: String(ownerId) }, select: { id: true } });
             const turfIds = turfs.map(t => t.id);
 
+            const whereClause = {
+                turfId: turfId ? String(turfId) : { in: turfIds }
+            };
+
+            if (targetStaffId) {
+                whereClause.userId = String(targetStaffId);
+            }
+
             const attendance = await prisma.attendance.findMany({
-                where: { turfId: { in: turfIds } },
+                where: whereClause,
                 include: { user: { select: { id: true, name: true, phone: true } }, turf: true },
                 orderBy: { clockIn: 'desc' }
             });
@@ -316,7 +327,15 @@ const getStaffAttendance = async (req, res) => {
         const turfs = await TurfMongo.find({ ownerId });
         const turfIds = turfs.map(t => t._id);
 
-        const records = await AttendanceMongo.find({ turfId: { $in: turfIds } })
+        const query = {
+            turfId: turfId || { $in: turfIds }
+        };
+
+        if (targetStaffId) {
+            query.userId = targetStaffId;
+        }
+
+        const records = await AttendanceMongo.find(query)
             .populate('userId', 'name phone')
             .populate('turfId', 'name')
             .sort({ clockIn: -1 });

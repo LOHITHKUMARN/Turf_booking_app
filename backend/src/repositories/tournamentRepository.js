@@ -61,7 +61,7 @@ const createTournament = async (data) => {
                 teamSize: Number(data.teamSize),
                 maxTeams: Number(data.maxTeams),
                 registrationFee: Number(data.registrationFee || 0),
-                prizePool: data.prizePool || '',
+                prizePool: data.prizePool !== undefined ? String(data.prizePool) : '',
                 startDate: new Date(data.startDate),
                 endDate: new Date(data.endDate),
                 registrationDeadline: new Date(data.registrationDeadline),

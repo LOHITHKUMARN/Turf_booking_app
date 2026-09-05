@@ -2,12 +2,12 @@ const mongoose = require('mongoose');
 
 const tournamentTeamSchema = new mongoose.Schema({
     tournamentId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'Tournament',
         required: true
     },
     captainId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'User',
         required: true
     },

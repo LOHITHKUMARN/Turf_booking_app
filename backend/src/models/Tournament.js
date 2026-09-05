@@ -2,12 +2,12 @@ const mongoose = require('mongoose');
 
 const tournamentSchema = new mongoose.Schema({
     ownerId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'User',
         required: true
     },
     turfId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.Mixed,
         ref: 'Turf',
         required: true
     },

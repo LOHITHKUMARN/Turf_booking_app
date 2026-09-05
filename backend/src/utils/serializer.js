@@ -293,10 +293,34 @@ const serializePayout = (payout) => {
 const serializeAttendance = (attendance) => {
     if (!attendance) return null;
     const { id, user, turf, ...rest } = attendance;
+
+    let turfVal = attendance.turfId;
+    if (turf && typeof turf === 'object') {
+        turfVal = {
+            _id: turf.id,
+            id: turf.id,
+            name: turf.name
+        };
+    }
+
+    let userVal = attendance.userId;
+    if (user && typeof user === 'object') {
+        userVal = {
+            _id: user.id,
+            id: user.id,
+            name: user.name,
+            phone: user.phone
+        };
+    }
+
     return {
         _id: id,
         id,
         ...rest,
+        turfId: turfVal,
+        turf: turfVal,
+        userId: userVal,
+        user: userVal,
         clockIn: attendance.clockIn ? new Date(attendance.clockIn).toISOString() : undefined,
         clockOut: attendance.clockOut ? new Date(attendance.clockOut).toISOString() : undefined,
         createdAt: attendance.createdAt ? new Date(attendance.createdAt).toISOString() : undefined,
@@ -307,10 +331,18 @@ const serializeAttendance = (attendance) => {
 const serializeIncident = (incident) => {
     if (!incident) return null;
     const { id, turf, reporter, ...rest } = incident;
+
+    let turfVal = incident.turfId;
+    if (turf && typeof turf === 'object') {
+        turfVal = { _id: turf.id, id: turf.id, name: turf.name };
+    }
+
     return {
         _id: id,
         id,
         ...rest,
+        turfId: turfVal,
+        turf: turfVal,
         type: incident.type === 'Crowd_Issue' ? 'Crowd Issue' : incident.type,
         status: incident.status === 'Under_Investigation' ? 'Under Investigation' : incident.status,
         images: incident.images || [],
@@ -322,10 +354,18 @@ const serializeIncident = (incident) => {
 const serializeMaintenance = (maint) => {
     if (!maint) return null;
     const { id, turf, reporter, ...rest } = maint;
+
+    let turfVal = maint.turfId;
+    if (turf && typeof turf === 'object') {
+        turfVal = { _id: turf.id, id: turf.id, name: turf.name };
+    }
+
     return {
         _id: id,
         id,
         ...rest,
+        turfId: turfVal,
+        turf: turfVal,
         status: maint.status === 'In_Progress' ? 'In Progress' : maint.status,
         images: maint.images || [],
         createdAt: maint.createdAt ? new Date(maint.createdAt).toISOString() : undefined,
