@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/constants/api_constants.dart';
@@ -15,6 +16,7 @@ class StaffProvider with ChangeNotifier {
   Map<String, dynamic>? _stats;
   bool _isClockedIn = false;
   Map<String, dynamic>? _activeAttendance;
+  List<dynamic> _attendanceHistory = [];
   List<dynamic> _announcements = [];
 
   bool get isLoading => _isLoading;
@@ -23,6 +25,7 @@ class StaffProvider with ChangeNotifier {
   Map<String, dynamic>? get stats => _stats;
   bool get isClockedIn => _isClockedIn;
   Map<String, dynamic>? get activeAttendance => _activeAttendance;
+  List<dynamic> get attendanceHistory => _attendanceHistory;
   List<dynamic> get announcements => _announcements;
 
   StaffProvider() {
@@ -159,6 +162,7 @@ class StaffProvider with ChangeNotifier {
         _isClockedIn = true;
         _activeAttendance = json.decode(response.body);
         notifyListeners();
+        fetchAttendanceHistory();
         return true;
       } else {
         final data = json.decode(response.body);
@@ -182,9 +186,41 @@ class StaffProvider with ChangeNotifier {
     try {
       final response = await _apiService.post('${ApiConstants.baseUrl}/staff/attendance/clock-out', {});
       if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final closedRecord = data is Map<String, dynamic>
+            ? (data['attendance'] ?? data)
+            : _activeAttendance;
+
+        if (closedRecord != null) {
+          final now = DateTime.now();
+          final updatedRecord = Map<String, dynamic>.from(closedRecord);
+          if (updatedRecord['clockOut'] == null) {
+            updatedRecord['clockOut'] = now.toIso8601String();
+          }
+          if (updatedRecord['workHours'] == null || updatedRecord['workHours'] == 0.0) {
+            final inTime = DateTime.tryParse(updatedRecord['clockIn']?.toString() ?? '');
+            if (inTime != null) {
+              final diff = now.difference(inTime);
+              updatedRecord['workHours'] =
+                  double.parse((diff.inMinutes / 60.0).toStringAsFixed(2));
+            }
+          }
+          _attendanceHistory.removeWhere((item) =>
+              (item['_id'] ?? item['id']) ==
+              (updatedRecord['_id'] ?? updatedRecord['id']));
+          _attendanceHistory.insert(0, updatedRecord);
+
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(
+                'staff_attendance_history', json.encode(_attendanceHistory));
+          } catch (_) {}
+        }
+
         _isClockedIn = false;
         _activeAttendance = null;
         notifyListeners();
+        fetchAttendanceHistory();
         return true;
       } else {
         final data = json.decode(response.body);
@@ -215,8 +251,37 @@ class StaffProvider with ChangeNotifier {
         }
         notifyListeners();
       }
+      fetchAttendanceHistory();
     } catch (e) {
       print('Error fetching active attendance: $e');
+    }
+  }
+
+  Future<void> fetchAttendanceHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('staff_attendance_history');
+      if (cached != null) {
+        try {
+          final list = json.decode(cached);
+          if (list is List && list.isNotEmpty) {
+            _attendanceHistory = list;
+            notifyListeners();
+          }
+        } catch (_) {}
+      }
+
+      final response = await _apiService.get('${ApiConstants.baseUrl}/staff/attendance/history');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List && data.isNotEmpty) {
+          _attendanceHistory = data;
+          await prefs.setString('staff_attendance_history', json.encode(data));
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      print('Error fetching attendance history: $e');
     }
   }
 

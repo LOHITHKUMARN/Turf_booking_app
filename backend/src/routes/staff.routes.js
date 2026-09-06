@@ -16,7 +16,8 @@ const {
     reportIncident,
     getAnnouncements,
     addExtraCharge,
-    getActiveAttendance
+    getActiveAttendance,
+    getAttendanceHistory
 } = require('../controllers/staffController');
 const { protect } = require('../middlewares/authMiddleware');
 const roleGuard = require('../middlewares/roleGuard');
@@ -42,5 +43,6 @@ router.put('/booking/:bookingId/extra-charges', addExtraCharge);
 router.post('/attendance/clock-in', clockIn);
 router.post('/attendance/clock-out', clockOut);
 router.get('/attendance/active', getActiveAttendance);
+router.get('/attendance/history', getAttendanceHistory);
 
 module.exports = router;

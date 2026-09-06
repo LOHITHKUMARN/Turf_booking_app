@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,11 +11,15 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  FirebaseMessaging get _fcm => FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   final ApiService _apiService = ApiService();
 
   Future<void> init() async {
+    if (Firebase.apps.isEmpty) {
+      log('Firebase not initialized, skipping NotificationService init');
+      return;
+    }
     // 1. Request Permissions (iOS/Android 13+)
     NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
@@ -67,6 +72,10 @@ class NotificationService {
   }
 
   Future<void> updateServerToken() async {
+    if (Firebase.apps.isEmpty) {
+      log('Firebase not initialized, skipping updateServerToken');
+      return;
+    }
     try {
       String? token = await _fcm.getToken();
       if (token == null) return;

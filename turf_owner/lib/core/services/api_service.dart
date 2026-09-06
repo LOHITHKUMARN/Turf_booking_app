@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/api_constants.dart';
 
@@ -101,23 +102,73 @@ class ApiService {
     return response;
   }
 
+  MediaType _getImageMediaType(String filePath) {
+    final ext = filePath.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return MediaType('image', 'png');
+      case 'webp':
+        return MediaType('image', 'webp');
+      case 'gif':
+        return MediaType('image', 'gif');
+      case 'bmp':
+        return MediaType('image', 'bmp');
+      case 'heic':
+        return MediaType('image', 'heic');
+      case 'heif':
+        return MediaType('image', 'heif');
+      case 'jpg':
+      case 'jpeg':
+      default:
+        return MediaType('image', 'jpeg');
+    }
+  }
+
   Future<http.StreamedResponse> postMultipart(String url, String filePath) async {
     final token = await getToken();
-    print('POST Multipart $url');
-    final request = http.MultipartRequest('POST', Uri.parse(url));
+    print('POST Multipart $url (file: $filePath)');
+    var request = http.MultipartRequest('POST', Uri.parse(url));
     
     request.headers['User-Agent'] = 'FlutterApp';
     request.headers['Accept'] = '*/*';
     request.headers['Connection'] = 'keep-alive';
+    request.headers['bypass-tunnel-reminder'] = 'true';
     
     if (token != null) {
       request.headers['Authorization'] = 'Bearer $token';
     }
     
-    request.files.add(await http.MultipartFile.fromPath('image', filePath));
+    request.files.add(await http.MultipartFile.fromPath(
+      'image',
+      filePath,
+      contentType: _getImageMediaType(filePath),
+    ));
     
-    final response = await request.send().timeout(const Duration(seconds: 30));
+    var response = await request.send().timeout(const Duration(seconds: 30));
     print('Multipart Status: ${response.statusCode}');
+
+    if (response.statusCode == 401) {
+      bool refreshed = await refreshToken();
+      if (refreshed) {
+        final newToken = await getToken();
+        request = http.MultipartRequest('POST', Uri.parse(url));
+        request.headers['User-Agent'] = 'FlutterApp';
+        request.headers['Accept'] = '*/*';
+        request.headers['Connection'] = 'keep-alive';
+        request.headers['bypass-tunnel-reminder'] = 'true';
+        if (newToken != null) {
+          request.headers['Authorization'] = 'Bearer $newToken';
+        }
+        request.files.add(await http.MultipartFile.fromPath(
+          'image',
+          filePath,
+          contentType: _getImageMediaType(filePath),
+        ));
+        response = await request.send().timeout(const Duration(seconds: 30));
+        print('Multipart Retry Status: ${response.statusCode}');
+      }
+    }
+
     return response;
   }
 

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/services/notification_service.dart';
 import 'providers/auth_provider.dart';
@@ -11,7 +10,6 @@ import 'providers/tournament_provider.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/dashboard/screens/home_screen.dart';
 import 'features/turfs/screens/add_turf_screen.dart';
-import 'features/slots/screens/manage_slots_screen.dart';
 import 'features/staff/screens/manage_staff_screen.dart';
 import 'features/bookings/screens/booking_management_screen.dart';
 import 'features/analytics/screens/dashboard_screen.dart';
@@ -24,9 +22,9 @@ import 'features/announcements/screens/create_announcement_screen.dart';
 import 'features/payouts/screens/payout_screen.dart';
 import 'features/tournaments/screens/tournament_list_screen.dart';
 import 'features/tournaments/screens/create_tournament_screen.dart';
+import 'features/staff/screens/staff_reports_screen.dart';
+import 'features/staff/screens/staff_attendance_screen.dart';
 import 'core/theme/app_theme.dart';
-
-
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +76,8 @@ class MyApp extends StatelessWidget {
         '/payouts': (context) => PayoutScreen(),
         '/tournaments': (context) => const TournamentListScreen(),
         '/create-tournament': (context) => const CreateTournamentScreen(),
+        '/staff-reports': (context) => const StaffReportsScreen(),
+        '/staff-attendance': (context) => const StaffAttendanceScreen(),
       },
     );
   }

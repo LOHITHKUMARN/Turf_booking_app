@@ -115,6 +115,9 @@ const findUserBookings = async (userId) => {
                 },
                 slot: {
                     select: { id: true, startTime: true, endTime: true, sport: true, groundName: true, price: true }
+                },
+                review: {
+                    select: { id: true, rating: true, comment: true }
                 }
             },
             orderBy: { bookingDate: 'desc' }
@@ -125,6 +128,7 @@ const findUserBookings = async (userId) => {
     return await BookingMongo.find({ userId })
         .populate('turfId', 'name location images')
         .populate('slotId')
+        .populate('reviewId')
         .sort({ bookingDate: -1 });
 };
 
@@ -136,13 +140,14 @@ const findBookingById = async (id) => {
             include: {
                 turf: true,
                 slot: true,
-                user: true
+                user: true,
+                review: true
             }
         });
         return booking ? serializeBooking(booking) : null;
     }
 
-    return await BookingMongo.findById(id).populate('turfId').populate('slotId').populate('userId');
+    return await BookingMongo.findById(id).populate('turfId').populate('slotId').populate('userId').populate('reviewId');
 };
 
 const updateBooking = async (id, updateData) => {

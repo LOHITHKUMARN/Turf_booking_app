@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../providers/auth_provider.dart';
 import '../../../providers/turf_provider.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../turfs/screens/add_turf_screen.dart';
@@ -12,7 +11,6 @@ class ManageVenuesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final turfProvider = Provider.of<TurfProvider>(context);
-    final owner = Provider.of<AuthProvider>(context).user;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -66,7 +64,16 @@ class ManageVenuesScreen extends StatelessWidget {
               width: double.infinity,
               color: Colors.grey[100],
               child: turf.images.isNotEmpty
-                  ? Image.network(ApiConstants.getImageUrl(turf.images[0]), fit: BoxFit.cover)
+                  ? Image.network(
+                      ApiConstants.getImageUrl(turf.images[0]),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: Colors.grey[200],
+                        child: const Center(
+                          child: Icon(Icons.broken_image_outlined, size: 40, color: Colors.grey),
+                        ),
+                      ),
+                    )
                   : const Icon(Icons.landscape_outlined, size: 48, color: Colors.grey),
             ),
           ),

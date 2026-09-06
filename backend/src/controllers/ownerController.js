@@ -6,7 +6,7 @@ const adminRepository = require('../repositories/adminRepository');
 const { emitToTurf, emitGlobal } = require('../services/socket');
 const { sendToUser } = require('../services/notificationService');
 const { prisma } = require('../config/db');
-const { serializeTurf, serializeSlot, serializeBooking, serializeUser, serializePayout, serializeAttendance, serializeAnnouncement } = require('../utils/serializer');
+const { serializeTurf, serializeSlot, serializeBooking, serializeUser, serializePayout, serializeAttendance, serializeAnnouncement, serializeMaintenance, serializeIncident } = require('../utils/serializer');
 const bcrypt = require('bcryptjs');
 
 const { deleteCache } = require('../services/redis');
@@ -572,6 +572,190 @@ const deleteAnnouncement = async (req, res) => {
     }
 };
 
+// @desc    Get all staff reports (Maintenance & Incidents) for owner's turfs
+// @route   GET /api/owner/reports
+// @access  Private/Owner
+const getOwnerReports = async (req, res) => {
+    try {
+        const ownerId = req.user._id || req.user.id;
+
+        if (isPostgres()) {
+            const turfs = await prisma.turf.findMany({
+                where: { ownerId: String(ownerId) },
+                select: { id: true, name: true }
+            });
+            const turfIds = turfs.map(t => t.id);
+
+            const [maintenances, incidents] = await Promise.all([
+                prisma.maintenance.findMany({
+                    where: { turfId: { in: turfIds } },
+                    include: {
+                        turf: { select: { id: true, name: true } },
+                        reporter: { select: { id: true, name: true, email: true, phone: true } }
+                    },
+                    orderBy: { createdAt: 'desc' }
+                }),
+                prisma.incident.findMany({
+                    where: { turfId: { in: turfIds } },
+                    include: {
+                        turf: { select: { id: true, name: true } },
+                        reporter: { select: { id: true, name: true, email: true, phone: true } }
+                    },
+                    orderBy: { createdAt: 'desc' }
+                })
+            ]);
+
+            return res.json({
+                maintenances: maintenances.map(serializeMaintenance),
+                incidents: incidents.map(serializeIncident)
+            });
+        }
+
+        const TurfMongo = require('../models/Turf');
+        const MaintenanceMongo = require('../models/Maintenance');
+        const IncidentMongo = require('../models/Incident');
+
+        const turfs = await TurfMongo.find({ ownerId });
+        const turfIds = turfs.map(t => t._id);
+
+        const [maintenances, incidents] = await Promise.all([
+            MaintenanceMongo.find({ turfId: { $in: turfIds } })
+                .populate('turfId', 'name')
+                .populate('reporterId', 'name email phone')
+                .sort({ createdAt: -1 }),
+            IncidentMongo.find({ turfId: { $in: turfIds } })
+                .populate('turfId', 'name')
+                .populate('reporterId', 'name email phone')
+                .sort({ createdAt: -1 })
+        ]);
+
+        res.json({
+            maintenances,
+            incidents
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Update maintenance report status
+// @route   PUT /api/owner/maintenance/:id/status
+// @access  Private/Owner
+const updateMaintenanceStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status) {
+            return res.status(400).json({ message: 'Status is required' });
+        }
+
+        if (isPostgres()) {
+            const prismaStatus = status === 'In Progress' ? 'In_Progress' : status;
+            const updated = await prisma.maintenance.update({
+                where: { id: String(id) },
+                data: { status: prismaStatus },
+                include: {
+                    turf: { select: { id: true, name: true } },
+                    reporter: { select: { id: true, name: true, email: true, phone: true } }
+                }
+            });
+
+            const serialized = serializeMaintenance(updated);
+            const turfIdStr = String(updated.turfId);
+            emitToTurf(turfIdStr, 'maintenanceUpdated', serialized);
+
+            return res.json({
+                message: 'Maintenance status updated successfully',
+                maintenance: serialized
+            });
+        }
+
+        const MaintenanceMongo = require('../models/Maintenance');
+        const mongoStatus = status === 'In_Progress' ? 'In Progress' : status;
+        const updated = await MaintenanceMongo.findByIdAndUpdate(
+            id,
+            { status: mongoStatus },
+            { new: true }
+        )
+            .populate('turfId', 'name')
+            .populate('reporterId', 'name email phone');
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Maintenance report not found' });
+        }
+
+        const turfIdStr = String(updated.turfId?._id || updated.turfId?.id || updated.turfId);
+        emitToTurf(turfIdStr, 'maintenanceUpdated', updated);
+
+        res.json({
+            message: 'Maintenance status updated successfully',
+            maintenance: updated
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Update safety incident report status
+// @route   PUT /api/owner/incident/:id/status
+// @access  Private/Owner
+const updateIncidentStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status) {
+            return res.status(400).json({ message: 'Status is required' });
+        }
+
+        if (isPostgres()) {
+            const prismaStatus = status === 'Under Investigation' ? 'Under_Investigation' : status;
+            const updated = await prisma.incident.update({
+                where: { id: String(id) },
+                data: { status: prismaStatus },
+                include: {
+                    turf: { select: { id: true, name: true } },
+                    reporter: { select: { id: true, name: true, email: true, phone: true } }
+                }
+            });
+
+            const serialized = serializeIncident(updated);
+            const turfIdStr = String(updated.turfId);
+            emitToTurf(turfIdStr, 'incidentUpdated', serialized);
+
+            return res.json({
+                message: 'Incident status updated successfully',
+                incident: serialized
+            });
+        }
+
+        const IncidentMongo = require('../models/Incident');
+        const mongoStatus = status === 'Under_Investigation' ? 'Under Investigation' : status;
+        const updated = await IncidentMongo.findByIdAndUpdate(
+            id,
+            { status: mongoStatus },
+            { new: true }
+        )
+            .populate('turfId', 'name')
+            .populate('reporterId', 'name email phone');
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Incident report not found' });
+        }
+
+        const turfIdStr = String(updated.turfId?._id || updated.turfId?.id || updated.turfId);
+        emitToTurf(turfIdStr, 'incidentUpdated', updated);
+
+        res.json({
+            message: 'Incident status updated successfully',
+            incident: updated
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     getMyTurfs,
     createTurf,
@@ -592,5 +776,8 @@ module.exports = {
     createManualBooking,
     createAnnouncement,
     getOwnerAnnouncements,
-    deleteAnnouncement
+    deleteAnnouncement,
+    getOwnerReports,
+    updateMaintenanceStatus,
+    updateIncidentStatus
 };

@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../providers/turf_provider.dart';
 import '../../../core/constants/locations.dart';
-
+import '../../../core/constants/api_constants.dart';
 import '../../../models/turf_model.dart';
 
 class AddTurfScreen extends StatefulWidget {
@@ -23,7 +23,11 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
   final _areaController = TextEditingController();
   final _upiController = TextEditingController();
   final _taxController = TextEditingController();
-  File? _selectedImage;
+  
+  final List<String> _existingImages = [];
+  final List<File> _newSelectedImages = [];
+  bool _isUploadingImages = false;
+  String _uploadStatusText = '';
   final _picker = ImagePicker();
   
   final List<String> _selectedSports = [];
@@ -49,22 +53,119 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
       _upiController.text = widget.turf!.upiId;
       _taxController.text = widget.turf!.taxPercentage.toString();
       _selectedTurfType = widget.turf!.turfType;
-      // We don't initialize _selectedImage because it's for picking new files.
-      // Remote images are handled separately in _submit if no new image is picked.
+      _existingImages.addAll(widget.turf!.images);
     }
   }
 
-  Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1080,
-      imageQuality: 85,
-    );
-    if (pickedFile != null) {
-      setState(() {
-        _selectedImage = File(pickedFile.path);
-      });
+  Future<void> _pickFromCamera() async {
+    try {
+      final pickedFile = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1600,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
+      if (pickedFile != null) {
+        setState(() {
+          _newSelectedImages.add(File(pickedFile.path));
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera error: $e')),
+        );
+      }
     }
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final pickedFiles = await _picker.pickMultiImage(
+        maxWidth: 1600,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
+      if (pickedFiles.isNotEmpty) {
+        setState(() {
+          for (final f in pickedFiles) {
+            _newSelectedImages.add(File(f.path));
+          }
+        });
+        return;
+      }
+    } catch (e) {
+      // Fallback to single pick if pickMultiImage is unsupported
+      try {
+        final pickedFile = await _picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1600,
+          maxHeight: 1200,
+          imageQuality: 85,
+        );
+        if (pickedFile != null) {
+          setState(() {
+            _newSelectedImages.add(File(pickedFile.path));
+          });
+          return;
+        }
+      } catch (err) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Gallery error: $err')),
+          );
+        }
+      }
+    }
+  }
+
+  void _showImagePickerOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Add Turf Photos',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE8F5E9),
+                  child: Icon(Icons.photo_library_outlined, color: Color(0xFF00A86B)),
+                ),
+                title: Text('Choose from Gallery', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                subtitle: const Text('Select one or multiple photos'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickFromGallery();
+                },
+              ),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE8F5E9),
+                  child: Icon(Icons.camera_alt_outlined, color: Color(0xFF00A86B)),
+                ),
+                title: Text('Take Photo', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                subtitle: const Text('Capture using camera'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickFromCamera();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showCityPicker() {
@@ -162,23 +263,44 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
       return;
     }
 
-    String? imageUrl;
-    List<String> images = widget.turf?.images ?? [];
-    if (_selectedImage != null) {
-      imageUrl = await Provider.of<TurfProvider>(context, listen: false).uploadImage(_selectedImage!.path);
-      if (imageUrl != null) {
-        images = [imageUrl];
-      } else {
+    final turfProvider = Provider.of<TurfProvider>(context, listen: false);
+    final List<String> finalImages = List<String>.from(_existingImages);
+
+    // Upload newly selected photos first
+    if (_newSelectedImages.isNotEmpty) {
+      setState(() {
+        _isUploadingImages = true;
+      });
+
+      bool uploadFailureOccurred = false;
+      for (int i = 0; i < _newSelectedImages.length; i++) {
+        setState(() {
+          _uploadStatusText = 'Uploading photo ${i + 1} of ${_newSelectedImages.length}...';
+        });
+        final file = _newSelectedImages[i];
+        final url = await turfProvider.uploadImage(file.path);
+        if (url != null && url.isNotEmpty) {
+          finalImages.add(url);
+        } else {
+          uploadFailureOccurred = true;
+        }
+      }
+
+      setState(() {
+        _isUploadingImages = false;
+        _uploadStatusText = '';
+      });
+
+      if (uploadFailureOccurred && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to upload image. Continuing with existing/no image...'),
+            content: Text('Some photos failed to upload. Continuing with successfully uploaded photos...'),
             backgroundColor: Colors.orange,
           ),
         );
       }
     }
 
-    final turfProvider = Provider.of<TurfProvider>(context, listen: false);
     final bool success;
 
     if (widget.turf != null) {
@@ -189,7 +311,7 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
         area: _areaController.text.trim(),
         sports: _selectedSports,
         amenities: _selectedAmenities,
-        images: images,
+        images: finalImages,
         grounds: _grounds,
         upiId: _upiController.text.trim(),
         taxPercentage: double.tryParse(_taxController.text) ?? 0.0,
@@ -202,13 +324,15 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
         area: _areaController.text.trim(),
         sports: _selectedSports,
         amenities: _selectedAmenities,
-        images: images,
+        images: finalImages,
         grounds: _grounds,
         upiId: _upiController.text.trim(),
         taxPercentage: double.tryParse(_taxController.text) ?? 0.0,
         turfType: _selectedTurfType,
       );
     }
+
+    if (!mounted) return;
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -255,34 +379,7 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            GestureDetector(
-              onTap: _pickImage,
-              child: Container(
-                height: 180,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F3F5),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.grey.withOpacity(0.1)),
-                  image: _selectedImage != null
-                      ? DecorationImage(image: FileImage(_selectedImage!), fit: BoxFit.cover)
-                      : null,
-                ),
-                child: _selectedImage == null
-                    ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.add_a_photo_outlined, size: 40, color: Colors.grey[400]),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Upload Turf Image',
-                            style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      )
-                    : null,
-              ),
-            ),
+            _buildPhotoGallerySection(),
             const SizedBox(height: 20),
             Row(
               children: [
@@ -443,12 +540,22 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
               width: double.infinity,
               height: 56,
               child: ElevatedButton(
-                onPressed: isLoading ? null : _submit,
-                child: isLoading
-                    ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                onPressed: (isLoading || _isUploadingImages) ? null : _submit,
+                child: (_isUploadingImages || isLoading)
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _isUploadingImages ? _uploadStatusText : 'SAVING...',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ],
                       )
                     : Text(widget.turf != null ? 'UPDATE TURF' : 'ADD TURF'),
               ),
@@ -456,6 +563,231 @@ class _AddTurfScreenState extends State<AddTurfScreen> {
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPhotoGallerySection() {
+    final totalPhotos = _existingImages.length + _newSelectedImages.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Turf Photos',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1A1A1A),
+                  ),
+                ),
+                if (totalPhotos > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00A86B).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$totalPhotos',
+                      style: const TextStyle(
+                        color: Color(0xFF00A86B),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (totalPhotos > 0)
+              TextButton.icon(
+                onPressed: _showImagePickerOptions,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18, color: Color(0xFF00A86B)),
+                label: const Text(
+                  'Add More',
+                  style: TextStyle(color: Color(0xFF00A86B), fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Upload photos of the grounds, turf surface, pavilion, and lights.',
+          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+        ),
+        const SizedBox(height: 12),
+
+        if (totalPhotos == 0)
+          GestureDetector(
+            onTap: _showImagePickerOptions,
+            child: Container(
+              height: 160,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F9FA),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE8F5E9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.add_a_photo_outlined, size: 32, color: Color(0xFF00A86B)),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Upload Turf Photos',
+                    style: GoogleFonts.poppins(color: const Color(0xFF1A1A1A), fontWeight: FontWeight.w600, fontSize: 15),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tap to browse gallery or use camera',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            height: 130,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              children: [
+                // 1. Existing remote images
+                ..._existingImages.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final imageUrl = entry.value;
+                  return _buildImageThumbnail(
+                    imageWidget: Image.network(
+                      ApiConstants.getImageUrl(imageUrl),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+                      ),
+                    ),
+                    tag: 'ONLINE',
+                    tagColor: Colors.blueAccent,
+                    onDelete: () {
+                      setState(() {
+                        _existingImages.removeAt(index);
+                      });
+                    },
+                  );
+                }),
+
+                // 2. Newly selected local images
+                ..._newSelectedImages.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final file = entry.value;
+                  return _buildImageThumbnail(
+                    imageWidget: Image.file(
+                      file,
+                      fit: BoxFit.cover,
+                    ),
+                    tag: 'NEW',
+                    tagColor: const Color(0xFF00A86B),
+                    onDelete: () {
+                      setState(() {
+                        _newSelectedImages.removeAt(index);
+                      });
+                    },
+                  );
+                }),
+
+                // 3. Add more button
+                GestureDetector(
+                  onTap: _showImagePickerOptions,
+                  child: Container(
+                    width: 110,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F3F5),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.add_circle_outline, size: 28, color: Color(0xFF00A86B)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Add More',
+                          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF00A86B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildImageThumbnail({
+    required Widget imageWidget,
+    required String tag,
+    required Color tagColor,
+    required VoidCallback onDelete,
+  }) {
+    return Container(
+      width: 120,
+      margin: const EdgeInsets.only(right: 12),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: imageWidget,
+            ),
+          ),
+          Positioned(
+            top: 6,
+            left: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: tagColor.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                tag,
+                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: onDelete,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

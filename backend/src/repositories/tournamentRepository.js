@@ -66,7 +66,7 @@ const createTournament = async (data) => {
                 endDate: new Date(data.endDate),
                 registrationDeadline: new Date(data.registrationDeadline),
                 rules: data.rules || [],
-                status: data.status || 'pending_approval',
+                status: data.status || 'open',
                 adminNotes: data.adminNotes || '',
                 bannerImage: data.bannerImage || ''
             }

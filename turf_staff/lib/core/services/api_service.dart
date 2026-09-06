@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/api_constants.dart';
 
@@ -97,6 +98,24 @@ class ApiService {
     return response;
   }
 
+  MediaType _getImageMediaType(String filePath) {
+    final ext = filePath.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return MediaType('image', 'png');
+      case 'webp':
+        return MediaType('image', 'webp');
+      case 'gif':
+        return MediaType('image', 'gif');
+      case 'bmp':
+        return MediaType('image', 'bmp');
+      case 'jpg':
+      case 'jpeg':
+      default:
+        return MediaType('image', 'jpeg');
+    }
+  }
+
   Future<http.StreamedResponse> postMultipart(String url, String filePath) async {
     final token = await getToken();
     final request = http.MultipartRequest('POST', Uri.parse(url));
@@ -105,8 +124,11 @@ class ApiService {
       request.headers['Authorization'] = 'Bearer $token';
     }
     
-    request.files.add(await http.MultipartFile.fromPath('image', filePath));
-    // Not wrapping multipart in refresh logic right now as it's complex and less frequent
+    request.files.add(await http.MultipartFile.fromPath(
+      'image',
+      filePath,
+      contentType: _getImageMediaType(filePath),
+    ));
     return await request.send().timeout(const Duration(seconds: 30));
   }
 

@@ -5,6 +5,7 @@ import '../../../providers/turf_provider.dart';
 import '../../../models/turf_model.dart';
 import 'manage_staff_screen.dart';
 import 'staff_attendance_screen.dart';
+import 'staff_reports_screen.dart';
 
 class StaffListScreen extends StatefulWidget {
   @override
@@ -34,6 +35,14 @@ class _StaffListScreenState extends State<StaffListScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.report_problem_outlined, color: Colors.orange),
+            tooltip: 'Staff Reports & Incidents',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const StaffReportsScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.event_note_outlined, color: Colors.blue),
             onPressed: () => Navigator.push(
@@ -116,6 +125,12 @@ class _StaffListScreenState extends State<StaffListScreen> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(20),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StaffAttendanceScreen(staff: staff),
+          ),
+        ),
         leading: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(

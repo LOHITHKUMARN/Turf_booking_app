@@ -7,7 +7,14 @@ import '../../../models/turf_model.dart';
 import '../../../core/theme/app_theme.dart';
 
 class CreateAnnouncementScreen extends StatefulWidget {
-  const CreateAnnouncementScreen({super.key});
+  final String? initialTurfId;
+  final String? initialTitle;
+
+  const CreateAnnouncementScreen({
+    super.key,
+    this.initialTurfId,
+    this.initialTitle,
+  });
 
   @override
   _CreateAnnouncementScreenState createState() => _CreateAnnouncementScreenState();
@@ -19,6 +26,7 @@ class _CreateAnnouncementScreenState extends State<CreateAnnouncementScreen> {
   final _messageController = TextEditingController();
   String _selectedType = 'General';
   bool _isPublic = false;
+  bool _isSubmitting = false;
   Turf? _selectedTurf;
 
   final List<String> _types = ['General', 'Emergency', 'Shift Update'];
@@ -26,9 +34,34 @@ class _CreateAnnouncementScreenState extends State<CreateAnnouncementScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialTitle != null) {
+      _titleController.text = widget.initialTitle!;
+    }
     final turfProvider = Provider.of<TurfProvider>(context, listen: false);
-    if (turfProvider.turfs.isNotEmpty) {
-      _selectedTurf = turfProvider.turfs.first;
+    if (turfProvider.turfs.isEmpty) {
+      turfProvider.fetchMyTurfs().then((_) {
+        if (mounted && turfProvider.turfs.isNotEmpty) {
+          setState(() {
+            if (widget.initialTurfId != null) {
+              _selectedTurf = turfProvider.turfs.firstWhere(
+                (t) => t.id == widget.initialTurfId,
+                orElse: () => turfProvider.turfs.first,
+              );
+            } else {
+              _selectedTurf = turfProvider.turfs.first;
+            }
+          });
+        }
+      });
+    } else {
+      if (widget.initialTurfId != null) {
+        _selectedTurf = turfProvider.turfs.firstWhere(
+          (t) => t.id == widget.initialTurfId,
+          orElse: () => turfProvider.turfs.first,
+        );
+      } else {
+        _selectedTurf = turfProvider.turfs.first;
+      }
     }
   }
 
@@ -260,11 +293,12 @@ class _CreateAnnouncementScreenState extends State<CreateAnnouncementScreen> {
   }
 
   Widget _buildSubmitButton(AnnouncementProvider provider) {
+    final isBusy = provider.isLoading || _isSubmitting;
     return SizedBox(
       width: double.infinity,
       height: 60,
       child: ElevatedButton(
-        onPressed: provider.isLoading ? null : _submit,
+        onPressed: isBusy ? null : _submit,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.primaryColor,
           foregroundColor: Colors.white,
@@ -272,7 +306,7 @@ class _CreateAnnouncementScreenState extends State<CreateAnnouncementScreen> {
           elevation: 4,
           shadowColor: AppTheme.primaryColor.withOpacity(0.3),
         ),
-        child: provider.isLoading
+        child: isBusy
             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : Text(
                 'LAUNCH ANNOUNCEMENT',
@@ -283,27 +317,35 @@ class _CreateAnnouncementScreenState extends State<CreateAnnouncementScreen> {
   }
 
   void _submit() async {
+    if (_isSubmitting) return;
     if (!_formKey.currentState!.validate() || _selectedTurf == null) return;
 
-    final provider = Provider.of<AnnouncementProvider>(context, listen: false);
-    final success = await provider.createAnnouncement(
-      turfId: _selectedTurf!.id,
-      title: _titleController.text,
-      message: _messageController.text,
-      type: _selectedType,
-      isPublic: _isPublic,
-    );
-
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("ANNOUNCEMENT BROADCASTED!", style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
-          backgroundColor: AppTheme.primaryColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+    setState(() => _isSubmitting = true);
+    try {
+      final provider = Provider.of<AnnouncementProvider>(context, listen: false);
+      final success = await provider.createAnnouncement(
+        turfId: _selectedTurf!.id,
+        title: _titleController.text.trim(),
+        message: _messageController.text.trim(),
+        type: _selectedType,
+        isPublic: _isPublic,
       );
-      Navigator.pop(context);
+
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("ANNOUNCEMENT BROADCASTED!", style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
+            backgroundColor: AppTheme.primaryColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 }

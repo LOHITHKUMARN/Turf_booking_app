@@ -5,7 +5,6 @@ import '../../../providers/tournament_provider.dart';
 import '../../../providers/turf_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../models/tournament_model.dart';
-import '../../../models/turf_model.dart';
 
 class EditTournamentScreen extends StatefulWidget {
   final Tournament tournament;
@@ -26,6 +25,7 @@ class _EditTournamentScreenState extends State<EditTournamentScreen> {
   late TextEditingController _teamSizeController;
   late TextEditingController _prizeController;
   
+  bool _isSubmitting = false;
   String? _selectedTurfId;
   String? _selectedSport;
   late DateTime _startDate;
@@ -48,7 +48,8 @@ class _EditTournamentScreenState extends State<EditTournamentScreen> {
     _startDate = widget.tournament.startDate;
     _endDate = widget.tournament.endDate;
     _deadline = widget.tournament.registrationDeadline;
-    _status = widget.tournament.status;
+    const validStatuses = ['open', 'ongoing', 'completed', 'cancelled'];
+    _status = validStatuses.contains(widget.tournament.status) ? widget.tournament.status : 'open';
 
     Future.microtask(() {
       Provider.of<TurfProvider>(context, listen: false).fetchMyTurfs();
@@ -196,8 +197,14 @@ class _EditTournamentScreenState extends State<EditTournamentScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _submitForm,
-                  child: const Text('SAVE CHANGES'),
+                  onPressed: _isSubmitting ? null : _submitForm,
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text('SAVE CHANGES'),
                 ),
               ),
               const SizedBox(height: 20),
@@ -256,35 +263,55 @@ class _EditTournamentScreenState extends State<EditTournamentScreen> {
   }
 
   void _submitForm() async {
+    if (_isSubmitting) return;
     if (!_formKey.currentState!.validate()) return;
 
-    final provider = Provider.of<TournamentProvider>(context, listen: false);
-    final tournamentData = {
-      'turfId': _selectedTurfId,
-      'sportsType': _selectedSport,
-      'name': _nameController.text,
-      'description': _descController.text,
-      'teamSize': int.parse(_teamSizeController.text),
-      'maxTeams': int.parse(_maxTeamsController.text),
-      'registrationFee': double.tryParse(_feeController.text) ?? 0.0,
-      'prizePool': _prizeController.text,
-      'startDate': _startDate.toIso8601String(),
-      'endDate': _endDate.toIso8601String(),
-      'registrationDeadline': _deadline.toIso8601String(),
-      'status': _status,
-    };
-    
-    final success = await provider.updateTournament(widget.tournament.id, tournamentData);
+    setState(() {
+      _isSubmitting = true;
+    });
 
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tournament updated successfully!'), backgroundColor: Colors.green),
-      );
-      Navigator.pop(context, true); // Return true to indicate update
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update tournament'), backgroundColor: Colors.red),
-      );
+    try {
+      final provider = Provider.of<TournamentProvider>(context, listen: false);
+      final tournamentData = {
+        'turfId': _selectedTurfId,
+        'sportsType': _selectedSport,
+        'name': _nameController.text.trim(),
+        'description': _descController.text.trim(),
+        'teamSize': int.tryParse(_teamSizeController.text.trim()) ?? 1,
+        'maxTeams': int.tryParse(_maxTeamsController.text.trim()) ?? 2,
+        'registrationFee': double.tryParse(_feeController.text.trim()) ?? 0.0,
+        'prizePool': _prizeController.text.trim(),
+        'startDate': _startDate.toIso8601String(),
+        'endDate': _endDate.toIso8601String(),
+        'registrationDeadline': _deadline.toIso8601String(),
+        'status': _status,
+      };
+      
+      final success = await provider.updateTournament(widget.tournament.id, tournamentData);
+
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tournament updated successfully!'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context, true); // Return true to indicate update
+        return;
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update tournament'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 }

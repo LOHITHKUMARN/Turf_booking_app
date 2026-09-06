@@ -166,6 +166,23 @@ const serializeBooking = (booking) => {
         };
     }
 
+    let reviewVal = null;
+    if (review && typeof review === 'object') {
+        reviewVal = {
+            _id: review.id,
+            id: review.id,
+            rating: review.rating,
+            comment: review.comment || ''
+        };
+    } else if (booking.reviewId) {
+        reviewVal = typeof booking.reviewId === 'object' ? {
+            _id: booking.reviewId._id || booking.reviewId.id,
+            id: booking.reviewId._id || booking.reviewId.id,
+            rating: booking.reviewId.rating,
+            comment: booking.reviewId.comment || ''
+        } : booking.reviewId;
+    }
+
     return {
         _id: id,
         id,
@@ -173,6 +190,8 @@ const serializeBooking = (booking) => {
         userId: userIdVal,
         turfId: turfIdVal,
         slotId: slotIdVal,
+        reviewId: reviewVal,
+        review: reviewVal,
         bookingDate: booking.bookingDate ? new Date(booking.bookingDate).toISOString() : undefined,
         bookingStatus: booking.bookingStatus === 'checked_in' 
             ? 'checked-in' 
@@ -337,12 +356,19 @@ const serializeIncident = (incident) => {
         turfVal = { _id: turf.id, id: turf.id, name: turf.name };
     }
 
+    let reporterVal = incident.reporterId;
+    if (reporter && typeof reporter === 'object') {
+        reporterVal = { _id: reporter.id, id: reporter.id, name: reporter.name, email: reporter.email, phone: reporter.phone };
+    }
+
     return {
         _id: id,
         id,
         ...rest,
         turfId: turfVal,
         turf: turfVal,
+        reporterId: reporterVal,
+        reporter: reporterVal,
         type: incident.type === 'Crowd_Issue' ? 'Crowd Issue' : incident.type,
         status: incident.status === 'Under_Investigation' ? 'Under Investigation' : incident.status,
         images: incident.images || [],
@@ -360,12 +386,19 @@ const serializeMaintenance = (maint) => {
         turfVal = { _id: turf.id, id: turf.id, name: turf.name };
     }
 
+    let reporterVal = maint.reporterId;
+    if (reporter && typeof reporter === 'object') {
+        reporterVal = { _id: reporter.id, id: reporter.id, name: reporter.name, email: reporter.email, phone: reporter.phone };
+    }
+
     return {
         _id: id,
         id,
         ...rest,
         turfId: turfVal,
         turf: turfVal,
+        reporterId: reporterVal,
+        reporter: reporterVal,
         status: maint.status === 'In_Progress' ? 'In Progress' : maint.status,
         images: maint.images || [],
         createdAt: maint.createdAt ? new Date(maint.createdAt).toISOString() : undefined,

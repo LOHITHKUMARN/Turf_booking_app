@@ -8,9 +8,11 @@ class ReviewProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
   List<Review> _turfReviews = [];
   bool _isLoading = false;
+  String? _errorMessage;
 
   List<Review> get turfReviews => _turfReviews;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
 
   Future<void> fetchTurfReviews(String turfId) async {
     _isLoading = true;
@@ -37,6 +39,7 @@ class ReviewProvider with ChangeNotifier {
     required String comment,
   }) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
@@ -45,7 +48,7 @@ class ReviewProvider with ChangeNotifier {
         {
           'turfId': turfId,
           'bookingId': bookingId,
-          'rating': rating,
+          'rating': rating.round(),
           'comment': comment,
         },
       );
@@ -54,10 +57,18 @@ class ReviewProvider with ChangeNotifier {
         // Refresh reviews after adding
         await fetchTurfReviews(turfId);
         return true;
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          _errorMessage = errorData['message'] ?? 'Failed to submit review';
+        } catch (_) {
+          _errorMessage = 'Failed to submit review';
+        }
+        return false;
       }
-      return false;
     } catch (e) {
       print('Error adding review: $e');
+      _errorMessage = e.toString();
       return false;
     } finally {
       _isLoading = false;

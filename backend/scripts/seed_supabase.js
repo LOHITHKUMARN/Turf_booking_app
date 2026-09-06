@@ -59,7 +59,7 @@ const seedSupabase = async () => {
                     sports: ['Football', 'Cricket'],
                     amenities: ['Floodlights', 'Changing Room', 'Parking', 'Drinking Water', 'First Aid'],
                     images: [
-                        'https://images.unsplash.com/photo-1529900240041-22f1ae52850e?auto=format&fit=crop&w=800&q=80',
+                        'https://images.unsplash.com/photo-1556056504-5c7696c4c28d?auto=format&fit=crop&w=800&q=80',
                         'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=800&q=80'
                     ],
                     status: 'approved',

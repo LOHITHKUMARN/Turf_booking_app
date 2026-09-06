@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,40 +11,60 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  FirebaseMessaging? get _fcm {
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        return FirebaseMessaging.instance;
+      }
+    } catch (e) {
+      log('FirebaseMessaging not available: $e');
+    }
+    return null;
+  }
+
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   final ApiService _apiService = ApiService();
 
   Future<void> init() async {
-    // 1. Request Permissions (iOS/Android 13+)
-    NotificationSettings settings = await _fcm.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      log('User granted notification permissions');
+    final fcm = _fcm;
+    if (fcm == null) {
+      log('NotificationService: Firebase not initialized, skipping FCM setup');
+      return;
     }
 
-    // 2. Initialize Local Notifications
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@ Tunis/ic_launcher'); // Standard icon
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
-    await _localNotifications.initialize(initializationSettings);
+    try {
+      // 1. Request Permissions (iOS/Android 13+)
+      NotificationSettings settings = await fcm.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
 
-    // 3. Handle Foreground Messages
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      log('Foreground message received: ${message.notification?.title}');
-      _showLocalNotification(message);
-    });
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        log('User granted notification permissions');
+      }
 
-    // 4. Handle Background/Terminated Click
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      log('Notification causing app to open: ${message.data}');
-    });
+      // 2. Initialize Local Notifications
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const InitializationSettings initializationSettings = InitializationSettings(
+        android: initializationSettingsAndroid,
+      );
+      await _localNotifications.initialize(initializationSettings);
+
+      // 3. Handle Foreground Messages
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        log('Foreground message received: ${message.notification?.title}');
+        _showLocalNotification(message);
+      });
+
+      // 4. Handle Background/Terminated Click
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        log('Notification causing app to open: ${message.data}');
+      });
+    } catch (e) {
+      log('NotificationService init error: $e');
+    }
   }
 
   Future<void> _showLocalNotification(RemoteMessage message) async {
@@ -68,7 +89,10 @@ class NotificationService {
 
   Future<void> updateServerToken() async {
     try {
-      String? token = await _fcm.getToken();
+      final fcm = _fcm;
+      if (fcm == null) return;
+
+      String? token = await fcm.getToken();
       if (token == null) return;
 
       log('FCM Token: $token');

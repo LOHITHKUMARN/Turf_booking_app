@@ -33,7 +33,7 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
     if (_isSuccess) return _buildSuccessView();
 
     final basePrice = (widget.slot['price'] ?? 0).toDouble();
-    final taxRate = (widget.turf.taxPercentage ?? 0) / 100;
+    final taxRate = widget.turf.taxPercentage / 100;
     final taxAmount = basePrice * taxRate;
     final totalAmount = basePrice + taxAmount;
 
@@ -147,12 +147,24 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
             decoration: BoxDecoration(
               color: Colors.green[50],
               borderRadius: BorderRadius.circular(16),
-              image: widget.turf.firstImageUrl != null && widget.turf.firstImageUrl!.isNotEmpty
-                  ? DecorationImage(
-                      image: NetworkImage(ApiConstants.getFullUrl(widget.turf.firstImageUrl)), 
-                      fit: BoxFit.cover
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: widget.turf.firstImageUrl != null && widget.turf.firstImageUrl!.isNotEmpty
+                  ? Image.network(
+                      ApiConstants.getFullUrl(widget.turf.firstImageUrl),
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: Colors.green[50],
+                        child: const Icon(Icons.sports_soccer, color: Colors.green),
+                      ),
                     )
-                  : null,
+                  : Container(
+                      color: Colors.green[50],
+                      child: const Icon(Icons.sports_soccer, color: Colors.green),
+                    ),
             ),
           ),
           const SizedBox(width: 16),
@@ -179,6 +191,13 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
     );
   }
 
+  String _formatCurrency(num value) {
+    if (value == value.roundToDouble()) {
+      return '₹${NumberFormat('#,##,###').format(value.toInt())}';
+    }
+    return '₹${NumberFormat('#,##,###.##').format(value)}';
+  }
+
   Widget _buildBillDetails(double base, double tax, double total) {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -192,9 +211,9 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
         children: [
           Text('Bill Details', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
-          _buildBillRow('Base Amount', '₹$base'),
+          _buildBillRow('Base Amount', _formatCurrency(base)),
           const SizedBox(height: 12),
-          _buildBillRow('Taxes (${widget.turf.taxPercentage}%)', '₹${tax.toStringAsFixed(2)}'),
+          _buildBillRow('Taxes (${widget.turf.taxPercentage}%)', _formatCurrency(tax)),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Divider(),
@@ -203,7 +222,7 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Total Payable', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
-              Text('₹${total.toStringAsFixed(2)}', style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.green[800])),
+              Text(_formatCurrency(total), style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.green[800])),
             ],
           ),
         ],

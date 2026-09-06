@@ -96,6 +96,30 @@ class BookingProvider with ChangeNotifier {
     }
   }
 
+  void markBookingAsReviewed(String bookingId, double rating, String comment) {
+    bool updated = false;
+    for (int i = 0; i < _myBookings.length; i++) {
+      final b = _myBookings[i];
+      if (b is Map && (b['id'] == bookingId || b['_id'] == bookingId)) {
+        final updatedBooking = Map<String, dynamic>.from(b);
+        final reviewObj = {
+          'id': 'temp_${DateTime.now().millisecondsSinceEpoch}',
+          '_id': 'temp_${DateTime.now().millisecondsSinceEpoch}',
+          'rating': rating,
+          'comment': comment,
+        };
+        updatedBooking['reviewId'] = reviewObj;
+        updatedBooking['review'] = reviewObj;
+        _myBookings[i] = updatedBooking;
+        updated = true;
+        break;
+      }
+    }
+    if (updated) {
+      notifyListeners();
+    }
+  }
+
   Future<bool> cancelBooking(String bookingId) async {
     _isLoading = true;
     notifyListeners();

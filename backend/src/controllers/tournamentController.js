@@ -98,20 +98,20 @@ exports.createTournament = async (req, res) => {
             ...req.body,
             ownerId: String(ownerId),
             prizePool: req.body.prizePool !== undefined ? String(req.body.prizePool) : '',
-            status: 'pending_approval' // Always needs admin approval
+            status: req.body.status || 'open' // Fully decided by owner, default 'open'
         };
 
         if (tournamentRepository.isPostgres()) {
             const tournament = await tournamentRepository.createTournament(tournamentData);
             logger.info(`Tournament saved successfully via Prisma: ${tournament.id}`);
-            return res.status(201).json({ message: 'Tournament created and pending approval', tournament });
+            return res.status(201).json({ message: 'Tournament created successfully', tournament });
         }
 
         const tournament = new Tournament(tournamentData);
         await tournament.save();
         logger.info(`Tournament saved successfully via Mongoose: ${tournament._id}`);
 
-        res.status(201).json({ message: 'Tournament created and pending approval', tournament });
+        res.status(201).json({ message: 'Tournament created successfully', tournament });
     } catch (error) {
         logger.error('Error in createTournament:', error);
         res.status(500).json({ message: error.message });

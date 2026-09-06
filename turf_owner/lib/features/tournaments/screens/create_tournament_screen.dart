@@ -23,6 +23,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   final _teamSizeController = TextEditingController();
   final _prizeController = TextEditingController();
   
+  bool _isSubmitting = false;
   String? _selectedTurfId;
   String? _selectedSport;
   DateTime _startDate = DateTime.now().add(const Duration(days: 7));
@@ -35,6 +36,17 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
     Future.microtask(() {
       Provider.of<TurfProvider>(context, listen: false).fetchMyTurfs();
     });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    _feeController.dispose();
+    _maxTeamsController.dispose();
+    _teamSizeController.dispose();
+    _prizeController.dispose();
+    super.dispose();
   }
 
   @override
@@ -164,9 +176,25 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
               _buildDatePicker('Reg. Deadline', _deadline, (date) => setState(() => _deadline = date)),
               
               const SizedBox(height: 48),
-              ElevatedButton(
-                onPressed: _submitForm,
-                child: const Text('CREATE & SUBMIT FOR APPROVAL'),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitForm,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text(
+                          'CREATE TOURNAMENT',
+                          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+                        ),
+                ),
               ),
               const SizedBox(height: 40),
             ],
@@ -216,35 +244,67 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   }
 
   void _submitForm() async {
+    if (_isSubmitting) return;
     if (!_formKey.currentState!.validate()) return;
 
-    final provider = Provider.of<TournamentProvider>(context, listen: false);
-    final tournamentData = {
-      'turfId': _selectedTurfId,
-      'sportsType': _selectedSport,
-      'name': _nameController.text,
-      'description': _descController.text,
-      'teamSize': int.parse(_teamSizeController.text),
-      'maxTeams': int.parse(_maxTeamsController.text),
-      'registrationFee': double.tryParse(_feeController.text) ?? 0.0,
-      'prizePool': _prizeController.text,
-      'startDate': _startDate.toIso8601String(),
-      'endDate': _endDate.toIso8601String(),
-      'registrationDeadline': _deadline.toIso8601String(),
-    };
-    
-    print('DEBUG: Submitting tournament data: $tournamentData');
-    final success = await provider.createTournament(tournamentData);
+    setState(() {
+      _isSubmitting = true;
+    });
 
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tournament submitted for approval!'), backgroundColor: Colors.green),
-      );
-      Navigator.pop(context);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to create tournament'), backgroundColor: Colors.red),
-      );
+    try {
+      final provider = Provider.of<TournamentProvider>(context, listen: false);
+      final tournamentData = {
+        'turfId': _selectedTurfId,
+        'sportsType': _selectedSport,
+        'name': _nameController.text.trim(),
+        'description': _descController.text.trim(),
+        'teamSize': int.tryParse(_teamSizeController.text.trim()) ?? 1,
+        'maxTeams': int.tryParse(_maxTeamsController.text.trim()) ?? 2,
+        'registrationFee': double.tryParse(_feeController.text.trim()) ?? 0.0,
+        'prizePool': _prizeController.text.trim(),
+        'startDate': _startDate.toIso8601String(),
+        'endDate': _endDate.toIso8601String(),
+        'registrationDeadline': _deadline.toIso8601String(),
+      };
+      
+      print('DEBUG: Submitting tournament data: $tournamentData');
+      final success = await provider.createTournament(tournamentData);
+
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tournament created successfully!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pop(context);
+        return;
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to create tournament. Please try again.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 }

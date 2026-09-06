@@ -26,16 +26,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final success = await authProvider.login(identifier, password);
-    if (success) {
-      if (authProvider.user?.role != 'admin') {
-        authProvider.logout();
-        _showSnackBar('ACCESS DENIED: ADMIN ONLY', Colors.redAccent);
-      } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
-      }
+    final errorMessage = await authProvider.login(identifier, password);
+    if (!mounted) return;
+
+    if (errorMessage == null) {
+      Navigator.pushReplacementNamed(context, '/dashboard');
     } else {
-      _showSnackBar('INVALID CREDENTIALS', Colors.redAccent);
+      _showSnackBar(errorMessage.toUpperCase(), Colors.redAccent);
     }
   }
 
@@ -95,8 +92,43 @@ class _LoginScreenState extends State<LoginScreen> {
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 48),
-              _buildExecutiveField(_emailController, 'IDENTIFIER', Icons.alternate_email_rounded),
+              const SizedBox(height: 24),
+              // Demo Admin Quick Fill Button
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _emailController.text = 'admin@turf.com';
+                    _passwordController.text = 'AdminPassword123!';
+                  });
+                  _showSnackBar('DEMO CREDENTIALS LOADED', AppTheme.primaryColor);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.primaryColor.withOpacity(0.25)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.vpn_key_rounded, size: 16, color: AppTheme.primaryColor),
+                      const SizedBox(width: 8),
+                      Text(
+                        'AUTOFILL ADMIN DEMO',
+                        style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.primaryColor,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              _buildExecutiveField(_emailController, 'ADMIN EMAIL / IDENTIFIER', Icons.alternate_email_rounded),
               const SizedBox(height: 20),
               _buildExecutiveField(
                 _passwordController, 

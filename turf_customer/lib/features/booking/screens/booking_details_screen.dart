@@ -60,15 +60,12 @@ class BookingDetailsScreen extends StatelessWidget {
                   width: double.infinity,
                   child: (turf is Map && turf['images'] != null && (turf['images'] as List).isNotEmpty)
                       ? Image.network(
-                          () {
-                            String img = turf['images'][0];
-                            if (img.startsWith('/')) {
-                              final base = ApiConstants.baseUrl.replaceAll('/api', '');
-                              return '$base$img';
-                            }
-                            return img;
-                          }(),
+                          ApiConstants.getFullUrl(turf['images'][0]),
                           fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: Colors.green[100],
+                            child: const Icon(Icons.stadium, size: 50, color: Colors.green),
+                          ),
                         )
                       : Container(color: Colors.green[100], child: const Icon(Icons.stadium, size: 50, color: Colors.green)),
                 ),

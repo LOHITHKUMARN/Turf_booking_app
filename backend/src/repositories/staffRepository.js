@@ -101,6 +101,23 @@ const clockOut = async (attendanceId) => {
     return await att.save();
 };
 
+const findAttendanceHistory = async (userId) => {
+    if (isPostgres()) {
+        const history = await prisma.attendance.findMany({
+            where: { userId: String(userId) },
+            include: { turf: { select: { id: true, name: true } } },
+            orderBy: { clockIn: 'desc' },
+            take: 10
+        });
+        return history.map(serializeAttendance);
+    }
+
+    return await AttendanceMongo.find({ userId })
+        .populate('turfId', 'name')
+        .sort({ clockIn: -1 })
+        .limit(10);
+};
+
 const findAssignedBookings = async (turfId) => {
     if (isPostgres()) {
         const bookings = await prisma.booking.findMany({
@@ -220,6 +237,7 @@ const reportIncident = async (data) => {
 
 module.exports = {
     findActiveAttendance,
+    findAttendanceHistory,
     getTodayShiftCount,
     clockIn,
     clockOut,

@@ -456,6 +456,20 @@ const getActiveAttendance = async (req, res) => {
     }
 };
 
+// @desc    Get staff attendance history
+// @route   GET /api/staff/attendance/history
+// @access  Private/Staff
+const getAttendanceHistory = async (req, res) => {
+    try {
+        const userId = req.user._id || req.user.id;
+        const history = await staffRepository.findAttendanceHistory(userId);
+        res.json(history);
+    } catch (error) {
+        logger.error('getAttendanceHistory error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // @desc    Get staff productivity stats
 // @route   GET /api/staff/stats
 // @access  Private/Staff
@@ -596,5 +610,6 @@ module.exports = {
     reportIncident,
     getAnnouncements,
     addExtraCharge,
-    getActiveAttendance
+    getActiveAttendance,
+    getAttendanceHistory
 };

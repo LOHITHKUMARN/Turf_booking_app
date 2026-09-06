@@ -89,14 +89,14 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     height: 60,
                     color: Colors.grey[200],
                     child: (turf is Map && turf['images'] != null && (turf['images'] as List).isNotEmpty)
-                        ? Image.network(() {
-                            String img = turf['images'][0];
-                            if (img.startsWith('/')) {
-                              final base = ApiConstants.baseUrl.replaceAll('/api', '');
-                              return '$base$img';
-                            }
-                            return img;
-                          }(), fit: BoxFit.cover)
+                        ? Image.network(
+                            ApiConstants.getFullUrl(turf['images'][0]),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.stadium_outlined, color: Colors.grey),
+                            ),
+                          )
                         : const Icon(Icons.stadium_outlined),
                   ),
                 ),
@@ -105,14 +105,22 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text((turf is Map ? turf['name'] : 'Turf') ?? 'Turf', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        (turf is Map ? turf['name'] : 'Turf') ?? 'Turf',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
                       Text(
                         '${DateFormat('dd MMM yyyy').format(date)} | ${slot['startTime']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 13),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 _buildStatusBadge(status),
               ],
             ),
@@ -123,13 +131,21 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Total Paid', style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 12)),
-                    Text('₹${booking['totalAmount']}', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green[800])),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total Paid', style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 12)),
+                      Text(
+                        '₹${booking['totalAmount']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green[800]),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: () {
                     Navigator.push(
@@ -155,15 +171,19 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: SizedBox(
                 width: double.infinity,
-                child: booking['reviewId'] == null
+                child: (booking['reviewId'] == null && booking['review'] == null)
                     ? OutlinedButton.icon(
                         onPressed: () async {
+                          final turfId = turf is Map ? (turf['_id'] ?? turf['id'] ?? '') : '';
+                          final bookingId = (booking['_id'] ?? booking['id'] ?? '').toString();
+                          final turfName = turf is Map ? (turf['name'] ?? 'Turf') : 'Turf';
+
                           await showDialog(
                             context: context,
                             builder: (context) => AddReviewDialog(
-                              turfId: turf is Map ? turf['_id'] : '',
-                              bookingId: booking['_id'],
-                              turfName: turf is Map ? turf['name'] : 'Turf',
+                              turfId: turfId.toString(),
+                              bookingId: bookingId,
+                              turfName: turfName.toString(),
                             ),
                           );
                           // Refresh to show updated states
@@ -201,8 +221,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                             const SizedBox(width: 12),
                             Row(
                               children: List.generate(5, (index) {
-                                final rating = (booking['reviewId'] != null && booking['reviewId']['rating'] != null)
-                                    ? (booking['reviewId']['rating'] as num).toDouble()
+                                final reviewObj = booking['reviewId'] ?? booking['review'];
+                                final rating = (reviewObj != null && reviewObj['rating'] != null)
+                                    ? (reviewObj['rating'] as num).toDouble()
                                     : 0.0;
                                 return Icon(
                                   index < rating ? Icons.star_rounded : Icons.star_outline_rounded,

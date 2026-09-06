@@ -311,7 +311,7 @@ model Tournament {
   endDate              DateTime
   registrationDeadline DateTime
   rules                String[]         @default([])
-  status               TournamentStatus @default(pending_approval)
+  status               TournamentStatus @default(open)
   adminNotes           String           @default("")
   bannerImage          String           @default("")
 

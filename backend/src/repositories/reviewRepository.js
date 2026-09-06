@@ -11,7 +11,7 @@ const createReview = async ({ userId, turfId, bookingId, rating, comment }) => {
                 userId: String(userId),
                 turfId: String(turfId),
                 bookingId: String(bookingId),
-                rating: Number(rating),
+                rating: Math.round(Number(rating)),
                 comment: comment || ''
             },
             include: {

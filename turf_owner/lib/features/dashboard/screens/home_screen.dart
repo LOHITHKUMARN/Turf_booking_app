@@ -3,10 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/turf_provider.dart';
-import '../../../core/constants/api_constants.dart';
-import '../../turfs/screens/add_turf_screen.dart';
-import '../../slots/screens/manage_slots_screen.dart';
-import '../../slots/screens/slot_rules_screen.dart';
 import '../../../core/theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -138,6 +134,12 @@ class _HomeScreenState extends State<HomeScreen> {
         }),
         _buildActionItem(Icons.people_outline, 'Staff', () {
           Navigator.pushNamed(context, '/staff-list');
+        }),
+        _buildActionItem(Icons.report_problem_outlined, 'Reports', () {
+          Navigator.pushNamed(context, '/staff-reports');
+        }),
+        _buildActionItem(Icons.badge_outlined, 'Attendance', () {
+          Navigator.pushNamed(context, '/staff-attendance');
         }),
         _buildActionItem(Icons.campaign_outlined, "Announcements", () {
           Navigator.pushNamed(context, '/announcements');
@@ -428,6 +430,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildDrawerItem(Icons.people_alt_rounded, 'STAFF', () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/staff-list');
+                  }),
+                  _buildDrawerItem(Icons.report_problem_rounded, 'STAFF REPORTS', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/staff-reports');
+                  }),
+                  _buildDrawerItem(Icons.badge_rounded, 'ATTENDANCE', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/staff-attendance');
                   }),
                   _buildDrawerItem(Icons.payments_rounded, 'PAYOUTS', () {
                     Navigator.pop(context);

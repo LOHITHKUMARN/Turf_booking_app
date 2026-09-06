@@ -9,6 +9,7 @@ class ApiConstants {
   static const String loginUrl = '$baseUrl/auth/login';
   static const String signupUrl = '$baseUrl/auth/signup';
   static const String myTurfsUrl = '$baseUrl/owner/turfs';
+  static const String ownerReportsUrl = '$baseUrl/owner/reports';
   static const String tournamentsUrl = '$baseUrl/tournaments';
   static const String myTournamentsUrl = '$baseUrl/tournaments/my';
   static const String adminPendingTournamentsUrl = '$baseUrl/tournaments/admin/pending';

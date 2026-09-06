@@ -10,13 +10,10 @@ class ApiConstants {
   static const String turfsUrl = '$baseUrl/admin/turfs';
   static const String usersUrl = '$baseUrl/admin/users';
   static const String statsUrl = '$baseUrl/admin/stats';
-  static const String payoutStatsUrl = '$baseUrl/admin/payouts/stats';
-  static const String pendingTournamentsUrl = '$baseUrl/tournaments/admin/pending';
-  static const String approveTournamentUrl = '$baseUrl/tournaments/admin/approve'; 
-  static const String allTournamentsUrl = '$baseUrl/tournaments';
   static const String turfStatusUrl = '$baseUrl/admin/turf/status';
   static const String userStatusUrl = '$baseUrl/admin/user/status';
   static const String deleteUserUrl = '$baseUrl/admin/user';
+  static const String auditLogsUrl = '$baseUrl/admin/audit-logs';
 
   static String getFullUrl(String? path) {
     if (path == null || path.isEmpty) return '';

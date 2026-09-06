@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(child: _buildFilterChips(turfProvider)),
             SliverToBoxAdapter(child: _buildSectionHeader('Explore Grounds')),
             if (turfProvider.isLoading)
-              const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
             else if (turfProvider.filteredTurfs.isEmpty)
               _buildEmptyState(turfProvider.selectedLocation, turfProvider.searchQuery)
             else
@@ -227,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           return Container(
             height: MediaQuery.of(context).size.height * 0.7,
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -497,20 +497,23 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  image: turf.firstImageUrl != null && turf.firstImageUrl!.isNotEmpty
-                    ? DecorationImage(
-                        image: NetworkImage(ApiConstants.getFullUrl(turf.firstImageUrl)), 
-                        fit: BoxFit.cover
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                child: turf.firstImageUrl != null && turf.firstImageUrl!.isNotEmpty
+                    ? Image.network(
+                        ApiConstants.getFullUrl(turf.firstImageUrl),
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: Colors.grey[200],
+                          child: Center(child: Icon(Icons.stadium_outlined, size: 40, color: Colors.grey[400])),
+                        ),
                       )
-                    : null,
-                ),
-                child: turf.firstImageUrl == null || turf.firstImageUrl!.isEmpty
-                  ? Center(child: Icon(Icons.image, color: Colors.grey[400]))
-                  : null,
+                    : Container(
+                        color: Colors.grey[200],
+                        child: Center(child: Icon(Icons.stadium_outlined, size: 40, color: Colors.grey[400])),
+                      ),
               ),
             ),
             Padding(
@@ -571,31 +574,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildEmptyState(String location, String query) {
     return SliverFillRemaining(
+      hasScrollBody: false,
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              query.isEmpty ? Icons.location_off_rounded : Icons.search_off_rounded, 
-              size: 80, 
-              color: Colors.grey[200]
-            ),
-            const SizedBox(height: 16),
-            Text(
-              query.isEmpty 
-                ? 'No turfs found in $location'
-                : 'No results for "$query"',
-              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              query.isEmpty
-                ? 'Try selecting another location\nor check back later!'
-                : 'Try searching for something else!',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(color: Colors.grey[500]),
-            ),
-          ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                query.isEmpty ? Icons.location_off_rounded : Icons.search_off_rounded, 
+                size: 64, 
+                color: Colors.grey[300],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                query.isEmpty 
+                  ? 'No turfs found in $location'
+                  : 'No results for "$query"',
+                style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                query.isEmpty
+                  ? 'Try selecting another location\nor check back later!'
+                  : 'Try searching for something else!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(color: Colors.grey[500], fontSize: 13),
+              ),
+            ],
+          ),
         ),
       ),
     );

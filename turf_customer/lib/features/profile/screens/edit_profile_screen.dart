@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/auth_provider.dart';
-import '../../../core/services/api_service.dart';
 import '../../../core/constants/api_constants.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;

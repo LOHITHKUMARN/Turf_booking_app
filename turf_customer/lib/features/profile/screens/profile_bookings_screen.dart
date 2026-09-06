@@ -118,8 +118,12 @@ class _ProfileBookingsScreenState extends State<ProfileBookingsScreen> {
                       borderRadius: BorderRadius.circular(20),
                       child: (turf is Map && turf['images'] != null && (turf['images'] as List).isNotEmpty)
                           ? Image.network(
-                              ApiConstants.baseUrl.replaceAll('/api', '') + turf['images'][0],
+                              ApiConstants.getFullUrl(turf['images'][0]),
                               fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: Colors.green[50],
+                                child: const Icon(Icons.sports_soccer, color: Colors.green),
+                              ),
                             )
                           : Container(color: Colors.green[50], child: const Icon(Icons.sports_soccer, color: Colors.green)),
                     ),
@@ -131,6 +135,8 @@ class _ProfileBookingsScreenState extends State<ProfileBookingsScreen> {
                       children: [
                         Text(
                           turf['name'] ?? 'Turf',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
                         ),
                         const SizedBox(height: 4),
@@ -138,9 +144,13 @@ class _ProfileBookingsScreenState extends State<ProfileBookingsScreen> {
                           children: [
                             Icon(Icons.calendar_today_outlined, size: 14, color: Colors.grey[600]),
                             const SizedBox(width: 6),
-                            Text(
-                              DateFormat('EEEE, dd MMM').format(date),
-                              style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 13),
+                            Expanded(
+                              child: Text(
+                                DateFormat('EEEE, dd MMM').format(date),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 13),
+                              ),
                             ),
                           ],
                         ),
@@ -149,15 +159,20 @@ class _ProfileBookingsScreenState extends State<ProfileBookingsScreen> {
                           children: [
                             Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
                             const SizedBox(width: 6),
-                            Text(
-                              '${slot['startTime']}${booking['groundName'] != null && booking['groundName'] != '' ? ' (${booking['groundName']})' : ''}',
-                              style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w600),
+                            Expanded(
+                              child: Text(
+                                '${slot['startTime']}${booking['groundName'] != null && booking['groundName'] != '' ? ' (${booking['groundName']})' : ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
                             ),
                           ],
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
                   _buildStatusChip(status),
                 ],
               ),
@@ -169,21 +184,56 @@ class _ProfileBookingsScreenState extends State<ProfileBookingsScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Amount Paid', style: GoogleFonts.outfit(fontSize: 11, color: Colors.grey[600])),
-                      Text('₹${booking['totalAmount']}', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[800])),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      if (isCompleted && booking['reviewId'] == null)
-                        TextButton(
-                          onPressed: () => _showReviewDialog(turf, booking),
-                          child: Text('RATE', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.amber[800])),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Amount Paid', style: GoogleFonts.outfit(fontSize: 11, color: Colors.grey[600])),
+                        Text(
+                          '₹${booking['totalAmount']}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[800]),
                         ),
-                      const SizedBox(width: 8),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isCompleted) ...[
+                        if (booking['reviewId'] == null && booking['review'] == null)
+                          TextButton(
+                            onPressed: () => _showReviewDialog(turf, booking),
+                            child: Text('RATE', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.amber[800])),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
+                                const SizedBox(width: 4),
+                                Text(
+                                  (booking['reviewId'] != null && booking['reviewId']['rating'] != null)
+                                      ? '${booking['reviewId']['rating']}★ RATED'
+                                      : (booking['review'] != null && booking['review']['rating'] != null)
+                                          ? '${booking['review']['rating']}★ RATED'
+                                          : 'RATED',
+                                  style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber[900]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                      ],
                       ElevatedButton(
                         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => BookingDetailsScreen(booking: booking))),
                         style: ElevatedButton.styleFrom(
@@ -230,15 +280,21 @@ class _ProfileBookingsScreenState extends State<ProfileBookingsScreen> {
   }
 
   void _showReviewDialog(dynamic turf, dynamic booking) async {
-    await showDialog(
+    final turfId = turf is Map ? (turf['_id'] ?? turf['id'] ?? '') : '';
+    final bookingId = booking is Map ? (booking['_id'] ?? booking['id'] ?? '') : '';
+    final turfName = turf is Map ? (turf['name'] ?? 'Turf') : 'Turf';
+
+    final result = await showDialog(
       context: context,
       builder: (context) => AddReviewDialog(
-        turfId: turf['_id'],
-        bookingId: booking['_id'],
-        turfName: turf['name'],
+        turfId: turfId.toString(),
+        bookingId: bookingId.toString(),
+        turfName: turfName.toString(),
       ),
     );
-    if (mounted) Provider.of<BookingProvider>(context, listen: false).fetchMyBookings();
+    if (result == true && mounted) {
+      Provider.of<BookingProvider>(context, listen: false).fetchMyBookings();
+    }
   }
 
   Widget _buildEmptyState(String msg) {

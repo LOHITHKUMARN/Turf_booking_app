@@ -17,53 +17,75 @@ class AuthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _user != null;
 
-  Future<bool> login(String identifier, String password) async {
+  Future<String?> login(String identifier, String password) async {
     _isLoading = true;
     notifyListeners();
 
     try {
+      final cleanId = identifier.trim();
+      final cleanPassword = password.trim();
+
+      // Normalize if user enters 'admin'
+      final effectiveIdentifier = (cleanId.toLowerCase() == 'admin')
+          ? 'admin@turf.com'
+          : cleanId;
+
       final response = await _apiService.post(
         ApiConstants.loginUrl,
         {
-          'identifier': identifier,
-          'password': password,
+          'identifier': effectiveIdentifier,
+          'password': cleanPassword,
         },
       );
 
+      dynamic data;
+      try {
+        data = jsonDecode(response.body);
+      } catch (_) {
+        data = {'message': response.body};
+      }
+
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['role'] != 'admin') {
-          _isLoading = false;
-          notifyListeners();
-          return false;
+        final role = (data['role'] ?? '').toString().toLowerCase();
+        if (role != 'admin') {
+          return 'ACCESS DENIED: Account role is "$role". Admin privileges required.';
         }
         _user = User.fromJson(data);
-        
+
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', data['token']);
+        await prefs.setString('token', data['token'] ?? '');
         if (data['refreshToken'] != null) {
           await prefs.setString('refreshToken', data['refreshToken']);
         }
         await prefs.setString('userData', jsonEncode(data));
-        
-        // Initialize Socket
-        SocketService().init(token: data['token'], userId: data['_id'] ?? '');
 
-        // Register FCM Token
-        NotificationService().updateServerToken();
+        // Initialize Socket safely
+        try {
+          SocketService().init(token: data['token'] ?? '', userId: data['_id'] ?? data['id'] ?? '');
+        } catch (e) {
+          debugPrint('Admin Socket init warning: $e');
+        }
 
-        _isLoading = false;
+        // Register FCM Token safely
+        try {
+          NotificationService().updateServerToken();
+        } catch (e) {
+          debugPrint('Admin FCM Token warning: $e');
+        }
+
         notifyListeners();
-        return true;
+        return null; // Success
+      } else if (response.statusCode == 401) {
+        return data['message'] ?? 'INVALID CREDENTIALS: Check identifier and security key.';
       } else {
-        _isLoading = false;
-        notifyListeners();
-        return false;
+        return data['message'] ?? 'Login failed (${response.statusCode})';
       }
     } catch (e) {
+      debugPrint('Admin login exception: $e');
+      return 'Connection error: Unable to reach server. Please check internet connection.';
+    } finally {
       _isLoading = false;
       notifyListeners();
-      return false;
     }
   }
 
@@ -89,36 +111,51 @@ class AuthProvider with ChangeNotifier {
         },
       );
 
-      final data = jsonDecode(response.body);
+      dynamic data;
+      try {
+        data = jsonDecode(response.body);
+      } catch (_) {
+        data = {'message': response.body};
+      }
 
       if (response.statusCode == 201) {
         _user = User.fromJson(data);
 
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', data['token']);
+        await prefs.setString('token', data['token'] ?? '');
         if (data['refreshToken'] != null) {
           await prefs.setString('refreshToken', data['refreshToken']);
         }
         await prefs.setString('userData', jsonEncode(data));
 
-        // Initialize Socket
-        SocketService().init(token: data['token'], userId: data['_id'] ?? '');
+        // Initialize Socket safely
+        try {
+          SocketService().init(token: data['token'] ?? '', userId: data['_id'] ?? data['id'] ?? '');
+        } catch (e) {
+          debugPrint('Admin Socket init warning: $e');
+        }
 
-        // Register FCM Token
-        NotificationService().updateServerToken();
+        // Register FCM Token safely
+        try {
+          NotificationService().updateServerToken();
+        } catch (e) {
+          debugPrint('Admin FCM Token warning: $e');
+        }
 
-        _isLoading = false;
-        notifyListeners();
         return {'success': true};
       } else {
-        _isLoading = false;
-        notifyListeners();
-        return {'success': false, 'message': data['message'] ?? 'Signup failed'};
+        String msg = data['message'] ?? 'Signup failed';
+        if (data['errors'] is List && (data['errors'] as List).isNotEmpty) {
+          final firstErr = data['errors'][0];
+          msg = firstErr['message'] ?? msg;
+        }
+        return {'success': false, 'message': msg};
       }
     } catch (e) {
+      return {'success': false, 'message': 'Connection error: $e'};
+    } finally {
       _isLoading = false;
       notifyListeners();
-      return {'success': false, 'message': 'Connection error'};
     }
   }
 

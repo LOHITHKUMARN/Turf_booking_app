@@ -10,8 +10,8 @@ class ApiService {
     return prefs.getString('token');
   }
 
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await getToken();
+  Future<Map<String, String>> _getHeaders({bool includeAuth = true}) async {
+    final token = includeAuth ? await getToken() : null;
     return {
       'Content-Type': 'application/json',
       'bypass-tunnel-reminder': 'true',
@@ -30,7 +30,7 @@ class ApiService {
         Uri.parse('${ApiConstants.baseUrl}/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'requestToken': storedRefreshToken}),
-      ).timeout(const Duration(seconds: 45));
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -57,14 +57,17 @@ class ApiService {
   }
 
   Future<http.Response> post(String url, Map<String, dynamic> body) async {
-    Map<String, String> headers = await _getHeaders();
+    final isAuthEndpoint = url.contains('/auth/login') ||
+        url.contains('/auth/signup') ||
+        url.contains('/auth/refresh');
+    Map<String, String> headers = await _getHeaders(includeAuth: !isAuthEndpoint);
     http.Response response = await http.post(
       Uri.parse(url),
       headers: headers,
       body: jsonEncode(body),
     ).timeout(const Duration(seconds: 30));
 
-    if (response.statusCode == 401) {
+    if (response.statusCode == 401 && !isAuthEndpoint) {
       bool refreshed = await refreshToken();
       if (refreshed) {
         headers = await _getHeaders();

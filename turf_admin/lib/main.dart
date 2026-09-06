@@ -3,19 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/services/notification_service.dart';
 import 'providers/auth_provider.dart';
-import 'providers/admin_payout_provider.dart';
-import 'providers/tournament_provider.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
 import 'features/turfs/screens/turf_management_screen.dart';
 import 'features/users/screens/user_management_screen.dart';
 import 'features/users/screens/add_owner_screen.dart';
-import 'features/payouts/screens/payout_management_screen.dart';
-import 'features/tournaments/screens/pending_tournaments_screen.dart';
-import 'features/tournaments/screens/tournament_monitor_screen.dart';
 import 'core/theme/app_theme.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,8 +25,6 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => AdminPayoutProvider()),
-        ChangeNotifierProvider(create: (_) => TournamentProvider()),
       ],
       child: TurfAdminApp(),
     ),
@@ -54,9 +46,6 @@ class TurfAdminApp extends StatelessWidget {
         '/manage-turfs': (context) => TurfManagementScreen(),
         '/manage-users': (context) => UserManagementScreen(),
         '/add-owner': (context) => AddOwnerScreen(),
-        '/payout-management': (context) => const PayoutManagementScreen(),
-        '/pending-tournaments': (context) => const PendingTournamentsScreen(),
-        '/tournament-monitor': (context) => const TournamentMonitorScreen(),
       },
     );
   }

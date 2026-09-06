@@ -5,6 +5,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/admin_drawer.dart';
 import 'dart:convert';
 
 class DashboardScreen extends StatefulWidget {
@@ -20,8 +21,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _stats = {
     'totalUsers': 0,
     'pendingTurfs': 0,
+    'approvedTurfs': 0,
     'totalRevenue': 0,
-    'totalPaid': 0,
+    'adminRevenue': 0,
     'commissionRate': 10,
   };
 
@@ -35,9 +37,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final response = await _apiService.get(ApiConstants.statsUrl);
       if (response.statusCode == 200) {
-        setState(() {
-          _stats = jsonDecode(response.body);
-        });
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          setState(() {
+            _stats = decoded;
+            _isLoadingStats = false;
+          });
+          return;
+        }
       }
       setState(() {
         _isLoadingStats = false;
@@ -55,7 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.bgColor,
-      drawer: _buildDrawer(context, authProvider, user),
+      drawer: const AdminDrawer(currentRoute: '/dashboard'),
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
@@ -190,15 +197,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ));
     }
 
+    final totalRev = double.tryParse(_stats['totalRevenue']?.toString() ?? '0') ?? 0.0;
+    final adminRev = double.tryParse(_stats['adminRevenue']?.toString() ?? '0') ?? (totalRev * 0.10);
+
     return Column(
       children: [
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildStatCard('PENDING TURFS', _stats['pendingTurfs'].toString(), Icons.stadium_rounded),
+              _buildStatCard('PENDING TURFS', (_stats['pendingTurfs'] ?? 0).toString(), Icons.stadium_rounded),
               const SizedBox(width: 16),
-              _buildStatCard('TOTAL USERS', _stats['totalUsers'].toString(), Icons.people_alt_rounded),
+              _buildStatCard('APPROVED TURFS', (_stats['approvedTurfs'] ?? 0).toString(), Icons.check_circle_outline_rounded),
             ],
           ),
         ),
@@ -207,9 +217,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildStatCard('TOTAL REVENUE', '₹ ${double.parse(_stats['totalRevenue'].toString()).toStringAsFixed(2)}', Icons.account_balance_wallet_outlined),
+              _buildStatCard('TOTAL USERS', (_stats['totalUsers'] ?? 0).toString(), Icons.people_alt_rounded),
               const SizedBox(width: 16),
-              _buildStatCard('TOTAL PAYOUTS', '₹ ${double.parse(_stats['totalPaid'].toString()).toStringAsFixed(2)}', Icons.payments_outlined),
+              _buildStatCard('COMMISSION %', '${_stats['commissionRate'] ?? 10}%', Icons.analytics_outlined),
             ],
           ),
         ),
@@ -218,9 +228,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildStatCard('COMMISSION %', '${_stats['commissionRate']}%', Icons.analytics_outlined),
+              _buildStatCard('TOTAL REVENUE', '₹ ${totalRev.toStringAsFixed(2)}', Icons.account_balance_wallet_outlined),
               const SizedBox(width: 16),
-              const Expanded(child: SizedBox.shrink()),
+              _buildStatCard('ADMIN REVENUE', '₹ ${adminRev.toStringAsFixed(2)}', Icons.trending_up_rounded),
             ],
           ),
         ),
@@ -260,9 +270,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(
               value,
               style: GoogleFonts.outfit(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
                 color: AppTheme.textMain,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
                 letterSpacing: -0.5,
               ),
             ),
@@ -293,8 +303,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _buildLinkItem(Icons.group_work_rounded, "USER MANAGEMENT", "Monitor activity across the platform", '/manage-users'),
         const SizedBox(height: 12),
         _buildLinkItem(Icons.person_add_alt_1_rounded, "ONBOARD DEPARTMENTS", "Provision new owner access keys", '/add-owner'),
-        const SizedBox(height: 12),
-        _buildLinkItem(Icons.emoji_events_rounded, "TOURNAMENT REQUESTS", "Approve or reject new events", '/pending-tournaments'),
       ],
     );
   }
@@ -376,121 +384,5 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-
-  Widget _buildDrawer(BuildContext context, AuthProvider authProvider, dynamic user) {
-    return Drawer(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      width: MediaQuery.of(context).size.width * 0.8,
-      child: Column(
-        children: [
-          _buildDrawerHeader(user),
-          const SizedBox(height: 32),
-          _buildDrawerItem(Icons.grid_view_rounded, 'DASHBOARD', () => Navigator.pop(context), isActive: true),
-          _buildDrawerItem(Icons.shield_rounded, 'TURF REVIEWS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/manage-turfs');
-          }),
-          _buildDrawerItem(Icons.supervised_user_circle_rounded, 'USER DIRECTORY', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/manage-users');
-          }),
-          _buildDrawerItem(Icons.key_rounded, 'ACCESS CONTROL', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/add-owner');
-          }),
-          _buildDrawerItem(Icons.payments_outlined, 'PAYOUTS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/payout-management');
-          }),
-          _buildDrawerItem(Icons.emoji_events_rounded, 'TOURNAMENTS', () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/pending-tournaments');
-          }),
-          const Spacer(),
-          const Divider(color: AppTheme.cardBorder, indent: 24, endIndent: 24),
-          _buildDrawerItem(Icons.logout_rounded, 'TERMINATE SESSION', () {
-            authProvider.logout();
-            Navigator.pushReplacementNamed(context, '/login');
-          }, color: Colors.redAccent),
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDrawerHeader(dynamic user) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(32, 80, 32, 32),
-      decoration: BoxDecoration(
-        color: AppTheme.bgColor,
-        border: const Border(bottom: BorderSide(color: AppTheme.cardBorder)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: AppTheme.primaryColor, width: 2),
-            ),
-            child: CircleAvatar(
-              radius: 36,
-              backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-              child: const Icon(Icons.person_rounded, color: AppTheme.primaryColor, size: 40),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            user?.name?.toUpperCase() ?? 'SYSTEM ADMIN',
-            style: GoogleFonts.outfit(
-              color: AppTheme.textMain,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            user?.email ?? 'root@turf.sys',
-            style: GoogleFonts.poppins(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap, {bool isActive = false, Color? color}) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: isActive ? AppTheme.primaryColor.withOpacity(0.06) : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ListTile(
-        leading: Icon(
-          icon, 
-          color: color ?? (isActive ? AppTheme.primaryColor : AppTheme.textSecondary), 
-          size: 22
-        ),
-        title: Text(
-          title,
-          style: GoogleFonts.outfit(
-            color: color ?? (isActive ? AppTheme.primaryColor : AppTheme.textMain),
-            fontWeight: isActive ? FontWeight.w900 : FontWeight.w700,
-            fontSize: 13,
-            letterSpacing: 1.2,
-          ),
-        ),
-        onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      ),
-    );
-  }
 }
+

@@ -1,6 +1,30 @@
 const express = require('express');
 const router = express.Router();
-const { getMyTurfs, createTurf, updateTurf, manageSlots, getTurfSlots, createStaff, getOwnerStaff, assignTurfToStaff, getOwnerBookings, getOwnerStats, getStaffAttendance, updateTurfSettings, requestPayout, getOwnerPayouts, getWalletData, toggleSlotBlock, createManualBooking, createAnnouncement, getOwnerAnnouncements, deleteAnnouncement } = require('../controllers/ownerController');
+const { 
+    getMyTurfs, 
+    createTurf, 
+    updateTurf, 
+    manageSlots, 
+    getTurfSlots, 
+    createStaff, 
+    getOwnerStaff, 
+    assignTurfToStaff, 
+    getOwnerBookings, 
+    getOwnerStats, 
+    getStaffAttendance, 
+    updateTurfSettings, 
+    requestPayout, 
+    getOwnerPayouts, 
+    getWalletData, 
+    toggleSlotBlock, 
+    createManualBooking, 
+    createAnnouncement, 
+    getOwnerAnnouncements, 
+    deleteAnnouncement,
+    getOwnerReports,
+    updateMaintenanceStatus,
+    updateIncidentStatus
+} = require('../controllers/ownerController');
 const { protect } = require('../middlewares/authMiddleware');
 const roleGuard = require('../middlewares/roleGuard');
 const { validate, createTurfSchema, manageSlotsSchema, createStaffSchema, createAnnouncementSchema, requestPayoutSchema } = require('../middlewares/validation');
@@ -28,5 +52,8 @@ router.post('/manual-booking', createManualBooking);
 router.get('/announcements', getOwnerAnnouncements);
 router.post('/announcement', validate(createAnnouncementSchema), createAnnouncement);
 router.delete('/announcement/:id', deleteAnnouncement);
+router.get('/reports', getOwnerReports);
+router.put('/maintenance/:id/status', updateMaintenanceStatus);
+router.put('/incident/:id/status', updateIncidentStatus);
 
 module.exports = router;

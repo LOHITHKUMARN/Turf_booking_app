@@ -11,7 +11,8 @@ class ApiConstants {
 
   static String getFullUrl(String? path) {
     if (path == null || path.isEmpty) return '';
-    if (path.startsWith('http')) return path;
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    if (path.startsWith('file:') || path.startsWith('blob:') || path.startsWith('data:')) return '';
     
     // Remove /api from baseUrl to get the server root
     final String serverRoot = baseUrl.split('/api')[0];

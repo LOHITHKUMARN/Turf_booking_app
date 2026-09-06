@@ -10,14 +10,29 @@ class TurfProvider with ChangeNotifier {
   bool _isLoading = false;
   final ApiService _apiService = ApiService();
 
+  List<Map<String, dynamic>> _maintenances = [];
+  List<Map<String, dynamic>> _incidents = [];
+  bool _isReportsLoading = false;
+
   List<Turf> get turfs => _turfs;
   bool get isLoading => _isLoading;
+  List<Map<String, dynamic>> get maintenances => _maintenances;
+  List<Map<String, dynamic>> get incidents => _incidents;
+  bool get isReportsLoading => _isReportsLoading;
 
   TurfProvider() {
     SocketService().on('bookingUpdated', (data) {
       print('Socket: Booking updated event received by owner');
       // No-op: owner fetches bookings on demand from the bookings screen
       // But we can use this to trigger a local notification badge in future
+    });
+    SocketService().on('maintenanceUpdated', (data) {
+      print('Socket: Maintenance updated received by owner');
+      fetchOwnerReports();
+    });
+    SocketService().on('incidentUpdated', (data) {
+      print('Socket: Incident updated received by owner');
+      fetchOwnerReports();
     });
   }
 
@@ -93,12 +108,16 @@ class TurfProvider with ChangeNotifier {
         filePath,
       );
 
+      final respStr = await response.stream.bytesToString();
       if (response.statusCode == 200) {
-        final respStr = await response.stream.bytesToString();
         final data = jsonDecode(respStr);
-        return data['url'];
+        final url = data['url'];
+        print('Image uploaded successfully: $url');
+        return url;
+      } else {
+        print('Upload failed (${response.statusCode}): $respStr');
+        return null;
       }
-      return null;
     } catch (e) {
       print('Error uploading image: $e');
       return null;
@@ -106,6 +125,17 @@ class TurfProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<List<String>> uploadImages(List<String> filePaths) async {
+    List<String> uploadedUrls = [];
+    for (final path in filePaths) {
+      final url = await uploadImage(path);
+      if (url != null && url.isNotEmpty) {
+        uploadedUrls.add(url);
+      }
+    }
+    return uploadedUrls;
   }
 
   Future<List<dynamic>> fetchTurfSlots(String turfId) async {
@@ -395,6 +425,66 @@ class TurfProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> fetchOwnerReports() async {
+    _isReportsLoading = true;
+    notifyListeners();
+    try {
+      final response = await _apiService.get(ApiConstants.ownerReportsUrl);
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        _maintenances = List<Map<String, dynamic>>.from(data['maintenances'] ?? []);
+        _incidents = List<Map<String, dynamic>>.from(data['incidents'] ?? []);
+      }
+    } catch (e) {
+      print('Error fetching owner reports: $e');
+    } finally {
+      _isReportsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updateMaintenanceStatus(String id, String status) async {
+    try {
+      final response = await _apiService.put(
+        '${ApiConstants.baseUrl}/owner/maintenance/$id/status',
+        {'status': status},
+      );
+      if (response.statusCode == 200) {
+        final idx = _maintenances.indexWhere((m) => (m['_id'] ?? m['id']).toString() == id);
+        if (idx != -1) {
+          _maintenances[idx]['status'] = status;
+          notifyListeners();
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error updating maintenance status: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateIncidentStatus(String id, String status) async {
+    try {
+      final response = await _apiService.put(
+        '${ApiConstants.baseUrl}/owner/incident/$id/status',
+        {'status': status},
+      );
+      if (response.statusCode == 200) {
+        final idx = _incidents.indexWhere((inc) => (inc['_id'] ?? inc['id']).toString() == id);
+        if (idx != -1) {
+          _incidents[idx]['status'] = status;
+          notifyListeners();
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error updating incident status: $e');
+      return false;
     }
   }
 }
